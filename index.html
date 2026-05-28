@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cipher·Link</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+button,input,textarea{font-family:inherit}
+textarea{resize:none}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{border-radius:4px}
+:root{--bg:#06080e;--sf:#0c0f1a;--sf2:#101420;--sf3:#0a0d16;--bd:#1c2340;--bd2:#2e3d6a;--ac:#4d8eff;--acd:#1a3066;--as:#00d4ff;--asd:#004455;--gr:#00e676;--grd:#00391c;--re:#ff4444;--red:#3d0000;--tx:#d0deff;--tx2:#8a9bbf;--tx3:#4a5a80;--tx4:#2a3450;--mb:#0d1530;--mbb:#1a3066;--mbt:#b0c8ff;--pb:#0a1008;--pbb:#1a3018;--pbt:#90c080;--sc:#1c2340}
+[data-theme=amber]{--bg:#060309;--sf:#0d0a04;--sf2:#111007;--sf3:#090804;--bd:#2c1f00;--bd2:#5a3c00;--ac:#f0a500;--acd:#4a2e00;--as:#ff8c00;--asd:#3d2200;--gr:#00cc66;--grd:#003d1f;--re:#cc3333;--red:#330000;--tx:#e8c870;--tx2:#c0902a;--tx3:#7a5200;--tx4:#3a2800;--mb:#110c00;--mbb:#4a2e00;--mbt:#d4a040;--pb:#080a04;--pbb:#1a2a08;--pbt:#88b040;--sc:#3a2800}
+[data-theme=rose]{--bg:#0e0608;--sf:#1a0c10;--sf2:#200f13;--sf3:#120809;--bd:#3d1525;--bd2:#6b2040;--ac:#ff6b9d;--acd:#4d1530;--as:#ff4080;--asd:#3d0f20;--gr:#00e676;--grd:#00391c;--re:#ff4444;--red:#3d0000;--tx:#ffd0df;--tx2:#c06080;--tx3:#7a3050;--tx4:#3d1525;--mb:#1a0c18;--mbb:#4d1530;--mbt:#ffb0d0;--pb:#080a0e;--pbb:#1a1a30;--pbt:#a0a0ff;--sc:#3d1525}
+[data-theme=forest]{--bg:#060e08;--sf:#0a1410;--sf2:#0f1a14;--sf3:#070e09;--bd:#1a3020;--bd2:#2e5035;--ac:#4dcc80;--acd:#1a4028;--as:#00ff88;--asd:#003d22;--gr:#00e676;--grd:#00391c;--re:#ff6644;--red:#3d1500;--tx:#c8f0d8;--tx2:#70a880;--tx3:#406050;--tx4:#203028;--mb:#0a1e10;--mbb:#1a4028;--mbt:#90e0b0;--pb:#0a100e;--pbb:#1a2820;--pbt:#80c0a8;--sc:#1a3020}
+[data-theme=violet]{--bg:#08060e;--sf:#100c1a;--sf2:#140f20;--sf3:#090610;--bd:#261540;--bd2:#42256a;--ac:#9d6aff;--acd:#2d1566;--as:#cc66ff;--asd:#3d1560;--gr:#00e676;--grd:#00391c;--re:#ff4488;--red:#3d0020;--tx:#e8d0ff;--tx2:#9070c0;--tx3:#5a3a80;--tx4:#2c1a40;--mb:#0e0a1e;--mbb:#2d1566;--mbt:#c0a0ff;--pb:#080a0a;--pbb:#0a2020;--pbt:#60c8c8;--sc:#2c1a40}
+[data-theme=slate]{--bg:#0a0a0c;--sf:#141416;--sf2:#181820;--sf3:#0d0d0f;--bd:#2a2a38;--bd2:#3e3e54;--ac:#8888ff;--acd:#20204a;--as:#66aaff;--asd:#10204a;--gr:#44ff88;--grd:#0a3020;--re:#ff5555;--red:#350000;--tx:#e0e0f0;--tx2:#8888a8;--tx3:#4a4a68;--tx4:#252535;--mb:#10101e;--mbb:#20204a;--mbt:#aaaaff;--pb:#0a0e12;--pbb:#0a1e20;--pbt:#66cccc;--sc:#2a2a38}
+body{background:var(--bg);color:var(--tx)}
+::-webkit-scrollbar-thumb{background:var(--sc)}
+#app{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.view{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.hidden{display:none!important}
+.cx{display:flex;flex-direction:column;align-items:center;padding:28px 20px;flex:1}
+/* topbar */
+#topbar{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:50px;min-height:50px;background:var(--sf);border-bottom:1px solid var(--bd);gap:12px;flex-shrink:0}
+.tl{display:flex;align-items:center;gap:12px}
+.tr{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.logo{font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:var(--tx);letter-spacing:.16em}
+.logo-ic{color:var(--ac)}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--tx3);transition:all .3s;flex-shrink:0}
+.slbl{font-family:'Courier New',monospace;font-size:9px;letter-spacing:.1em;color:var(--tx3);transition:color .3s}
+.btn-ic{background:none;border:1px solid var(--bd);color:var(--tx3);font-size:13px;width:30px;height:30px;cursor:pointer;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.btn-ic:hover{border-color:var(--bd2);color:var(--tx2)}
+.tbname{font-size:12px;font-weight:600;color:var(--tx2);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+#footer{border-top:1px solid var(--bd);padding:3px 16px;background:var(--sf);font-family:'Courier New',monospace;font-size:8px;color:var(--tx4);display:flex;justify-content:space-between;flex-shrink:0;letter-spacing:.07em}
+/* forms */
+.flbl{font-family:'Courier New',monospace;font-size:9px;color:var(--tx3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+.finp{width:100%;background:var(--sf2);border:1px solid var(--bd);color:var(--tx);font-size:13px;padding:9px 12px;border-radius:5px;transition:border-color .15s}
+.finp:focus{outline:none;border-color:rgba(77,142,255,.5)}
+.finp::placeholder{color:var(--tx4)}
+.fg{margin-bottom:16px}
+.bp{font-family:'Courier New',monospace;background:var(--ac);border:none;color:#000;font-size:11px;font-weight:700;padding:10px 22px;cursor:pointer;border-radius:5px;letter-spacing:.1em;transition:.15s;width:100%}
+.bp:hover{filter:brightness(1.12)}
+.bp:disabled{opacity:.35;cursor:not-allowed}
+.bs{font-family:'Courier New',monospace;background:transparent;border:1px solid var(--bd2);color:var(--tx2);font-size:11px;padding:9px 18px;cursor:pointer;border-radius:5px;letter-spacing:.08em;transition:.15s}
+.bs:hover{border-color:var(--ac);color:var(--ac)}
+.bg{font-family:'Courier New',monospace;background:none;border:1px solid var(--bd);color:var(--tx3);font-size:9px;padding:4px 9px;cursor:pointer;border-radius:3px;letter-spacing:.07em;transition:.15s;white-space:nowrap}
+.bg:hover{border-color:var(--bd2);color:var(--tx2)}
+.errbox{font-family:'Courier New',monospace;font-size:10px;color:var(--re);background:var(--red);border:1px solid rgba(255,68,68,.3);border-radius:4px;padding:9px 12px;margin-bottom:14px;line-height:1.5}
+.badge{font-family:'Courier New',monospace;font-size:8px;font-weight:700;border-radius:3px;padding:2px 7px;letter-spacing:.07em;border:1px solid transparent}
+.b-ac{color:var(--ac);background:var(--acd);border-color:rgba(77,142,255,.25)}
+.b-gr{color:var(--gr);background:var(--grd);border-color:rgba(0,230,118,.25)}
+.b-as{color:var(--as);background:var(--asd);border-color:rgba(0,212,255,.25)}
+.sep{font-family:'Courier New',monospace;font-size:10px;color:var(--bd)}
+.card{background:var(--sf2);border:1px solid var(--bd);border-radius:8px;padding:22px 20px;transition:border-color .15s}
+/* auth */
+.auth-wrap{display:flex;align-items:center;justify-content:center;flex:1;padding:24px}
+.auth-box{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:32px;width:100%;max-width:400px}
+.auth-title{font-family:'Courier New',monospace;font-size:20px;font-weight:700;color:var(--tx);letter-spacing:.15em;margin-bottom:4px}
+.auth-sub{font-size:12px;color:var(--tx3);margin-bottom:24px;line-height:1.6}
+.auth-sw{text-align:center;margin-top:18px;font-size:12px;color:var(--tx3)}
+.auth-sw a{color:var(--ac);cursor:pointer}
+/* avatar */
+.agrid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-bottom:12px}
+.aopt{font-size:20px;width:36px;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--sf2);border:2px solid transparent;transition:.12s}
+.aopt:hover{border-color:var(--bd2);transform:scale(1.08)}
+.aopt.sel{border-color:var(--ac);background:var(--acd)}
+.aup{width:100%;padding:8px;background:transparent;border:1px dashed var(--bd2);color:var(--tx3);font-size:11px;cursor:pointer;border-radius:5px;font-family:'Courier New',monospace;transition:.15s;margin-bottom:10px}
+.aup:hover{border-color:var(--ac);color:var(--ac)}
+.aprev-em{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:34px;border:3px solid var(--ac);margin:0 auto 12px;background:var(--sf2)}
+.aprev-img{width:64px;height:64px;border-radius:50%;object-fit:cover;border:3px solid var(--ac);margin:0 auto 12px;display:block}
+/* theme */
+.tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
+.topt{border-radius:7px;padding:9px;cursor:pointer;border:2px solid transparent;transition:.15s;display:flex;flex-direction:column;gap:5px;align-items:center}
+.topt:hover{border-color:var(--bd2)}
+.topt.sel{border-color:var(--ac)}
+.tswatch{width:100%;height:24px;border-radius:4px;display:flex;gap:3px;overflow:hidden}
+.tswatch span{flex:1;display:block}
+.tname{font-family:'Courier New',monospace;font-size:9px;letter-spacing:.07em;text-align:center;color:var(--tx3)}
+/* home */
+.hero{text-align:center;margin-bottom:24px;max-width:480px}
+.hero h1{font-family:'Courier New',monospace;font-size:28px;font-weight:700;color:var(--tx);letter-spacing:.2em;margin-bottom:8px}
+.hero p{font-size:13px;color:var(--tx3);line-height:1.7}
+.hcards{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:520px;margin-bottom:24px}
+.hcn{cursor:pointer}
+.hcn:hover{border-color:var(--ac)!important}
+.ci{font-size:22px;margin-bottom:8px}
+.ct{font-size:14px;font-weight:600;color:var(--tx);margin-bottom:4px}
+.cd{font-size:11px;color:var(--tx3);line-height:1.6}
+.join-ta{width:100%;height:68px;background:var(--sf3);border:1px solid var(--bd);color:var(--as);font-family:'Courier New',monospace;font-size:9px;padding:8px;border-radius:4px;margin-bottom:8px;transition:.15s}
+.join-ta:focus{outline:none;border-color:rgba(0,212,255,.4)}
+.join-ta::placeholder{color:var(--tx4)}
+.saved-sec{width:100%;max-width:520px;margin-bottom:20px}
+.shdr{font-family:'Courier New',monospace;font-size:10px;color:var(--tx3);letter-spacing:.1em;cursor:pointer;margin-bottom:8px;user-select:none;display:inline-flex;align-items:center;gap:6px}
+.shdr:hover{color:var(--tx2)}
+.slist{display:flex;flex-direction:column;gap:5px}
+.srow{display:flex;align-items:center;gap:8px;background:var(--sf);border:1px solid var(--bd);border-radius:6px;padding:8px 12px;flex-wrap:wrap}
+.scode{font-family:'Courier New',monospace;font-size:11px;font-weight:700;color:var(--ac);flex:1}
+.sdate{font-family:'Courier New',monospace;font-size:9px;color:var(--tx4)}
+.tfooter{margin-top:auto;padding:20px 0 8px;text-align:center;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.ttag{font-family:'Courier New',monospace;font-size:8px;color:var(--tx4);letter-spacing:.07em}
+/* exchange view */
+.ewrap{display:flex;flex-direction:column;align-items:center;flex:1;gap:0;overflow-y:auto;padding:20px}
+.ebox{background:var(--sf2);border:1px solid var(--bd2);border-radius:10px;padding:20px;width:100%;max-width:540px;margin-bottom:14px}
+.estep{font-family:'Courier New',monospace;font-size:9px;color:var(--ac);letter-spacing:.14em;margin-bottom:6px;text-transform:uppercase}
+.edesc{font-size:12px;color:var(--tx3);margin-bottom:10px;line-height:1.6}
+.ecode{width:100%;height:80px;background:var(--sf3);border:1px solid var(--bd);color:var(--ac);font-family:'Courier New',monospace;font-size:8px;padding:8px;border-radius:5px;margin-bottom:8px;word-break:break-all;cursor:pointer;transition:border-color .15s}
+.ecode:focus{outline:none;border-color:var(--ac)}
+.ecode-as{color:var(--as)}
+.ecopy{font-family:'Courier New',monospace;background:var(--ac);color:#000;border:none;width:100%;padding:9px;font-size:10px;font-weight:700;cursor:pointer;border-radius:4px;letter-spacing:.1em;transition:.15s;margin-bottom:0}
+.ecopy:hover{filter:brightness(1.12)}
+.ecopy-as{background:var(--as)}
+.ediv{border-top:1px solid var(--bd);margin:16px 0}
+.einp{width:100%;height:80px;background:var(--sf3);border:1px solid var(--bd2);color:var(--as);font-family:'Courier New',monospace;font-size:8px;padding:8px;border-radius:5px;margin-bottom:8px;word-break:break-all;transition:border-color .15s}
+.einp:focus{outline:none;border-color:var(--as)}
+.einp::placeholder{color:var(--tx4);font-size:10px}
+.econn{font-family:'Courier New',monospace;background:var(--gr);color:#000;border:none;width:100%;padding:10px;font-size:11px;font-weight:700;cursor:pointer;border-radius:4px;letter-spacing:.1em;transition:.15s}
+.econn:hover{filter:brightness(1.1)}
+.ewait{font-size:11px;color:var(--tx3);text-align:center;font-style:italic;padding:10px 0;animation:pulse 2s ease-in-out infinite}
+.spinner{font-size:22px;color:var(--ac);animation:spin 1.1s linear infinite;display:inline-block}
+.prog-msg{font-family:'Courier New',monospace;font-size:10px;color:var(--tx2);letter-spacing:.08em;text-align:center;margin-top:8px}
+/* chat */
+#istrip{border-bottom:1px solid var(--bd);padding:5px 16px;background:var(--sf);flex-shrink:0;display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.info-l{display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap}
+.info-r{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.lbl{font-family:'Courier New',monospace;font-size:9px;color:var(--tx4);letter-spacing:.08em}
+#messages{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.m-empty{text-align:center;font-family:'Courier New',monospace;color:var(--tx4);font-size:10px;margin-top:60px;line-height:2}
+.msg{animation:fadeUp .15s ease forwards}
+.m-sys{text-align:center;font-family:'Courier New',monospace;font-size:9px;color:var(--tx3);padding:4px 0;letter-spacing:.06em;font-style:italic;opacity:.8}
+.m-me,.m-peer{display:flex;flex-direction:column;gap:3px}
+.m-me{align-items:flex-end}
+.m-peer{align-items:flex-start}
+.m-meta{display:flex;align-items:center;gap:6px;font-family:'Courier New',monospace;font-size:8px;color:var(--tx3)}
+.m-bbl{max-width:72%;padding:9px 13px;font-size:13px;line-height:1.65;word-break:break-word}
+.bme{background:var(--mb);border:1px solid var(--mbb);color:var(--mbt);border-radius:10px 10px 2px 10px}
+.bpeer{background:var(--pb);border:1px solid var(--pbb);color:var(--pbt);border-radius:10px 10px 10px 2px}
+.typing-ind{font-family:'Courier New',monospace;font-size:9px;color:var(--tx3);font-style:italic;animation:pulse 1.8s ease-in-out infinite}
+#compose{border-top:1px solid var(--bd);padding:10px 14px;background:var(--sf);flex-shrink:0}
+.crow{display:flex;gap:8px;align-items:flex-end;margin-bottom:5px}
+#cinp{flex:1;background:var(--sf2);border:1px solid var(--bd2);color:var(--tx);font-size:13px;padding:8px 11px;line-height:1.5;border-radius:5px;transition:.15s}
+#cinp:focus{outline:none;border-color:rgba(77,142,255,.4)}
+#cinp::placeholder{color:var(--tx4)}
+#sbtn{font-family:'Courier New',monospace;background:var(--ac);border:none;color:#000;font-size:11px;font-weight:700;padding:8px 16px;flex-shrink:0;cursor:pointer;border-radius:5px;transition:.15s;letter-spacing:.08em}
+#sbtn:hover{filter:brightness(1.12)}
+#sbtn:disabled{background:transparent;border:1px solid var(--bd);color:var(--tx4);cursor:not-allowed}
+.cft{display:flex;justify-content:space-between;font-family:'Courier New',monospace;font-size:8px;color:var(--tx4)}
+#ccc.warn{color:var(--re)}
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.mbox{background:var(--sf);border:1px solid var(--bd2);border-radius:12px;padding:28px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto}
+.mtitle{font-family:'Courier New',monospace;font-size:16px;font-weight:700;color:var(--tx);letter-spacing:.14em;margin-bottom:4px}
+.msub{font-size:12px;color:var(--tx3);margin-bottom:20px}
+.mfoot{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.stitle{font-family:'Courier New',monospace;font-size:10px;color:var(--tx3);letter-spacing:.12em;margin-bottom:10px;text-transform:uppercase;border-bottom:1px solid var(--bd);padding-bottom:6px}
+@keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.blink{animation:blink 1s step-end infinite}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="topbar">
+  <div class="tl">
+    <div class="logo"><span class="logo-ic">◈ </span>CIPHER·LINK</div>
+  </div>
+  <div class="tr">
+    <div class="sdot" id="sdot"></div>
+    <span class="slbl" id="slbl">OFFLINE</span>
+    <button id="btn-leave" class="bg hidden" onclick="reset()">LEAVE</button>
+    <button id="btn-set" class="btn-ic hidden" onclick="openSettings()" title="Settings">⚙</button>
+    <div id="tb-prof" style="display:none;align-items:center;gap:7px;cursor:pointer" onclick="openSettings()">
+      <div id="tb-ava"></div>
+      <span class="tbname" id="tb-name"></span>
+    </div>
+  </div>
+</div>
+<div id="content">
+
+<!-- LOGIN -->
+<div id="v-login" class="view">
+  <div class="auth-wrap"><div class="auth-box">
+    <div class="auth-title">◈ SIGN IN</div>
+    <div class="auth-sub">Welcome back to Cipher·Link</div>
+    <div id="lerr" class="errbox hidden"></div>
+    <div class="fg"><div class="flbl">Username</div>
+      <input id="lu" class="finp" type="text" placeholder="your username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="fg"><div class="flbl">Password</div>
+      <input id="lp" class="finp" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="bp" onclick="doLogin()">SIGN IN →</button>
+    <div class="auth-sw">No account? <a onclick="showView('v-register')">Create one</a></div>
+  </div></div>
+</div>
+
+<!-- REGISTER -->
+<div id="v-register" class="view hidden">
+  <div class="auth-wrap"><div class="auth-box">
+    <div class="auth-title">◈ CREATE ACCOUNT</div>
+    <div class="auth-sub">Pick a username, set a password, choose your look</div>
+    <div id="rerr" class="errbox hidden"></div>
+    <div class="fg"><div class="flbl">Username</div>
+      <input id="ru" class="finp" type="text" placeholder="letters/numbers/_ · 3–20 chars" maxlength="20" autocomplete="username">
+    </div>
+    <div class="fg"><div class="flbl">Password</div>
+      <input id="rp" class="finp" type="password" placeholder="min 6 characters" autocomplete="new-password">
+    </div>
+    <div class="fg"><div class="flbl">Confirm Password</div>
+      <input id="rp2" class="finp" type="password" placeholder="repeat password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doRegister()">
+    </div>
+    <div class="fg"><div class="flbl">Avatar</div>
+      <div id="raprev" class="aprev-em">😎</div>
+      <input type="file" id="rafile" accept="image/*" style="display:none" onchange="handleAvFile(this,'r')">
+      <button class="aup" onclick="document.getElementById('rafile').click()">📎 Upload photo</button>
+      <div class="agrid" id="ragrid"></div>
+    </div>
+    <div class="fg"><div class="flbl">Theme</div>
+      <div class="tgrid" id="rtgrid"></div>
+    </div>
+    <button class="bp" onclick="doRegister()">CREATE ACCOUNT →</button>
+    <div class="auth-sw">Already have an account? <a onclick="showView('v-login')">Sign in</a></div>
+  </div></div>
+</div>
+
+<!-- HOME -->
+<div id="v-home" class="view hidden">
+  <div class="cx">
+    <div class="hero">
+      <h1>CIPHER·LINK</h1>
+      <p>Browser-to-browser encrypted messaging.<br>No servers · No installs · Messages saved locally.</p>
+    </div>
+    <div id="herr" class="errbox hidden"></div>
+    <div class="hcards">
+      <div class="card hcn" onclick="startHost()">
+        <div class="ci" style="color:var(--ac)">+</div>
+        <div class="ct">New Room</div>
+        <div class="cd">Generate an offer code and share it with your contact to connect</div>
+      </div>
+      <div class="card">
+        <div class="ci" style="color:var(--as)">→</div>
+        <div class="ct">Join Room</div>
+        <textarea id="join-ta" class="join-ta" placeholder="Paste offer code here…"></textarea>
+        <button class="bp" onclick="startGuest()">JOIN →</button>
+      </div>
+    </div>
+    <div id="saved-sec" class="saved-sec"></div>
+    <div class="tfooter">
+      <span class="ttag">◆ Native WebRTC — zero servers</span>
+      <span class="ttag">◆ PBKDF2 + AES-256-GCM</span>
+      <span class="ttag">◆ Works fully offline</span>
+      <span class="ttag">◆ Messages saved locally</span>
+    </div>
+  </div>
+</div>
+
+<!-- EXCHANGE (host & guest) -->
+<div id="v-exchange" class="view hidden">
+  <div class="ewrap">
+    <div id="xprogress" style="text-align:center;padding:12px 0 6px">
+      <span class="spinner" id="xspinner">◈</span>
+      <div class="prog-msg" id="xmsg">Please wait…</div>
+    </div>
+    <div id="xbox" class="ebox hidden"></div>
+    <button class="bg" style="margin-top:6px" onclick="reset()">CANCEL</button>
+  </div>
+</div>
+
+<!-- CHAT -->
+<div id="v-chat" class="view hidden" style="overflow:hidden;padding:0">
+  <div id="istrip">
+    <div class="info-l">
+      <span id="peer-ava"></span>
+      <span class="lbl">PEER</span>
+      <span id="pid" style="font-family:'Courier New',monospace;font-size:11px;font-weight:600;color:var(--tx2)">—</span>
+      <span class="sep">│</span>
+      <span class="badge b-gr">🔒 AES-256-GCM</span>
+      <span class="sep">│</span>
+      <span id="mcnt" style="font-family:'Courier New',monospace;font-size:9px;color:var(--tx3)">0 messages</span>
+    </div>
+    <div class="info-r">
+      <button class="bg" onclick="clearHistory()">🗑 CLEAR</button>
+    </div>
+  </div>
+  <div id="messages">
+    <div class="m-empty" id="m-empty">Encrypted channel open.<br>
+      <span style="font-size:9px;color:var(--tx4)">Messages are saved locally across sessions.</span></div>
+  </div>
+  <div id="compose">
+    <div class="crow">
+      <textarea id="cinp" rows="2"
+        placeholder="Type a message… (Enter to send · Shift+Enter for newline)"
+        maxlength="2000" onkeydown="handleKey(event)" oninput="onInput(this)"></textarea>
+      <button id="sbtn" onclick="sendMsg()" disabled>SEND</button>
+    </div>
+    <div class="cft">
+      <span>ENTER send · SHIFT+ENTER newline</span>
+      <span id="ccc">0/2000</span>
+    </div>
+  </div>
+</div>
+
+</div><!-- /content -->
+<div id="footer">
+  <span id="nodel">Cipher·Link</span>
+  <span>Native WebRTC · AES-256-GCM · No servers · Offline-capable</span>
+</div>
+</div><!-- /app -->
+
+<!-- SETTINGS -->
+<div id="modal" class="overlay hidden" onclick="if(event.target===this)closeSettings()">
+  <div class="mbox">
+    <div class="mtitle">PROFILE & SETTINGS</div>
+    <div class="msub" id="msub"></div>
+    <div class="stitle">Avatar</div>
+    <div id="saprev" class="aprev-em">😎</div>
+    <input type="file" id="safile" accept="image/*" style="display:none" onchange="handleAvFile(this,'s')">
+    <button class="aup" onclick="document.getElementById('safile').click()">📎 Upload new photo</button>
+    <div class="agrid" id="sagrid"></div>
+    <div class="stitle" style="margin-top:16px">Display Name</div>
+    <div class="fg"><input id="sname" class="finp" type="text" placeholder="Display name" maxlength="20"></div>
+    <div class="stitle">Theme</div>
+    <div class="tgrid" id="stgrid"></div>
+    <div class="stitle" style="margin-top:16px">Account</div>
+    <button class="bs" style="width:100%;margin-bottom:8px" onclick="doLogout()">SIGN OUT</button>
+    <div class="mfoot">
+      <button class="bs" onclick="closeSettings()">CANCEL</button>
+      <button class="bp" style="width:auto;padding:9px 24px" onclick="saveSettings()">SAVE CHANGES</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+"use strict";
+// ─── Constants ────────────────────────────────────────────────
+const EMOJIS=["😎","🦊","🐺","🦁","🐯","🐻","🐼","🦄","🐸","🦋","🐙","🦅","🐲","👾","🤖","🎭","💀","🔮","⚡","🌙","🔥","💎","🌊","🎯"];
+const THEMES=[{id:"ocean",name:"Ocean",sw:["#06080e","#4d8eff","#00e676"]},{id:"amber",name:"Amber",sw:["#060309","#f0a500","#00cc66"]},{id:"rose",name:"Rose",sw:["#0e0608","#ff6b9d","#00e676"]},{id:"forest",name:"Forest",sw:["#060e08","#4dcc80","#00e676"]},{id:"violet",name:"Violet",sw:["#08060e","#9d6aff","#00e676"]},{id:"slate",name:"Slate",sw:["#0a0a0c","#8888ff","#44ff88"]}];
+const STUN={iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:stun1.l.google.com:19302"},{urls:"stun:stun2.l.google.com:19302"},{urls:"stun:stun4.l.google.com:19302"}]};
+
+// ─── SDP encode/decode (plain base64 — no compression, no gzip) ───────────
+// SDP is pure ASCII so btoa(JSON.stringify(...)) is always safe.
+// We strip whitespace on decode to survive copy-paste mangling.
+function sdpEncode(descObj){
+  const json=JSON.stringify({type:descObj.type,sdp:descObj.sdp});
+  return btoa(json);
+}
+function sdpDecode(str){
+  // strip ALL whitespace/newlines that copy-paste may have added
+  const clean=str.replace(/\s/g,"");
+  // fix URL-safe base64 that some tools produce
+  const b64=clean.replace(/-/g,"+").replace(/_/g,"/");
+  // add padding
+  const padded=b64+("===".slice(0,(4-b64.length%4)%4));
+  try{
+    return JSON.parse(atob(padded));
+  }catch(e){
+    throw new Error("Could not decode — make sure you copied the full code without missing any characters.");
+  }
+}
+
+// ─── Crypto ───────────────────────────────────────────────────
+const SC=crypto.subtle;
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
+const e64=a=>btoa(String.fromCharCode(...new Uint8Array(a)));
+const d64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+
+async function sha256hex(s){
+  const b=await SC.digest("SHA-256",new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+// Derive shared AES key from the raw offer SDP — both peers have this after handshake
+async function deriveSharedKey(offerSdp){
+  const raw=await SC.importKey("raw",new TextEncoder().encode(offerSdp),"PBKDF2",false,["deriveKey"]);
+  return SC.deriveKey({name:"PBKDF2",salt:new TextEncoder().encode("cl5-v1"),iterations:50000,hash:"SHA-256"},raw,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+async function aesEnc(k,t){
+  const iv=rnd(12),ct=await SC.encrypt({name:"AES-GCM",iv},k,new TextEncoder().encode(t));
+  return e64(new Uint8Array([...iv,...new Uint8Array(ct)]));
+}
+async function aesDec(k,b){
+  const a=d64(b),pt=await SC.decrypt({name:"AES-GCM",iv:a.slice(0,12)},k,a.slice(12));
+  return new TextDecoder().decode(pt);
+}
+
+// ─── Wait for ICE gathering ────────────────────────────────────
+// Strategy: wait up to 15s OR until we have at least one candidate AND state=complete
+function waitICE(pc){
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=()=>{if(!done){done=true;resolve();}};
+    // resolve immediately if already complete
+    if(pc.iceGatheringState==="complete"){finish();return;}
+    pc.addEventListener("icegatheringstatechange",()=>{
+      if(pc.iceGatheringState==="complete") finish();
+    });
+    // Hard timeout — always resolve after 15s so we don't hang forever
+    setTimeout(finish, 15000);
+  });
+}
+
+// ─── Storage ──────────────────────────────────────────────────
+const LS="cl5:";
+const lg=k=>{try{return localStorage.getItem(LS+k)}catch{return null}};
+const ls=(k,v)=>{try{localStorage.setItem(LS+k,v)}catch{}};
+const ld=k=>{try{localStorage.removeItem(LS+k)}catch{}};
+const getAcct=u=>{try{return JSON.parse(lg("a:"+u.toLowerCase()))}catch{return null}};
+const setAcct=(u,d)=>ls("a:"+u.toLowerCase(),JSON.stringify(d));
+const getSess=()=>{try{return JSON.parse(lg("sess"))}catch{return null}};
+const setSess=u=>ls("sess",JSON.stringify(u));
+const clrSess=()=>ld("sess");
+function loadMsgs(id){try{return(JSON.parse(lg("m:"+id)||"[]")).map(m=>({...m,ts:new Date(m.ts)}))}catch{return[]}}
+function saveMsgs(id,ms){ls("m:"+id,JSON.stringify(ms.slice(-500).map(m=>({...m,ts:m.ts instanceof Date?m.ts.toISOString():m.ts}))))}
+function loadRooms(){try{return JSON.parse(lg("rooms")||"[]")}catch{return[]}}
+function upsertRoom(id,role){const rs=loadRooms(),i=rs.findIndex(r=>r.id===id);const e={id,role,lastSeen:new Date().toISOString()};if(i>=0)rs[i]={...rs[i],...e};else rs.push({...e,created:new Date().toISOString()});ls("rooms",JSON.stringify(rs.slice(-20)))}
+function eraseRoom(id){ls("rooms",JSON.stringify(loadRooms().filter(r=>r.id!==id)));ld("m:"+id)}
+
+// ─── State ────────────────────────────────────────────────────
+const myNode=Array.from(rnd(3)).map(b=>b.toString(16).padStart(2,"0")).join("").toUpperCase();
+let CU=null,pc=null,dc=null,symKey=null,roomId="",rawOfferSdp="";
+let allMsgs=[],msgCount=0,peerMeta={name:"",avatar:""};
+let typTimer=null,lastTyp=0;
+let tAv={r:"😎",s:"😎"};
+
+// ─── DOM ──────────────────────────────────────────────────────
+const $=id=>document.getElementById(id);
+const esc=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");
+function showView(v){["v-login","v-register","v-home","v-exchange","v-chat"].forEach(id=>$(id).classList.toggle("hidden",id!==v))}
+function setStatus(s){
+  const m={offline:{c:"var(--tx3)",g:"none",l:"OFFLINE"},waiting:{c:"var(--as)",g:"0 0 8px rgba(0,212,255,.5)",l:"WAITING"},connected:{c:"var(--gr)",g:"0 0 8px rgba(0,230,118,.5)",l:"LIVE"},disconnected:{c:"var(--re)",g:"none",l:"DISCONNECTED"},error:{c:"var(--re)",g:"none",l:"ERROR"}};
+  const x=m[s]||m.offline;
+  $("sdot").style.cssText=`width:7px;height:7px;border-radius:50%;transition:all .3s;flex-shrink:0;background:${x.c};box-shadow:${x.g}`;
+  $("slbl").style.color=x.c;$("slbl").textContent=x.l;
+}
+function showErr(id,msg){const e=$(id);if(!e)return;e.textContent="✗ "+msg;e.classList.remove("hidden")}
+function hideErr(id){const e=$(id);if(e)e.classList.add("hidden")}
+function applyTheme(id){document.documentElement.setAttribute("data-theme",id==="ocean"?"":id)}
+function isImg(a){return a&&(a.startsWith("data:")||a.startsWith("http"))}
+function avHTML(av,sz=18){if(isImg(av))return`<img src="${av}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;return`<span style="font-size:${Math.round(sz*.75)}px;line-height:1">${av||"😎"}</span>`}
+function setAvPrev(ctx,val){
+  tAv[ctx]=val;
+  const id=ctx==="r"?"raprev":"saprev";const el=$(id);if(!el)return;
+  if(isImg(val)){el.outerHTML=`<img id="${id}" class="aprev-img" src="${val}">`;}
+  else{const cur=$(id);if(cur.tagName==="IMG")cur.outerHTML=`<div id="${id}" class="aprev-em">${val}</div>`;else cur.textContent=val;}
+  document.querySelectorAll(`#${ctx==="r"?"ragrid":"sagrid"} .aopt`).forEach(o=>o.classList.toggle("sel",o.dataset.e===val));
+}
+function handleAvFile(inp,ctx){const f=inp.files[0];if(!f)return;const rd=new FileReader();rd.onload=e=>setAvPrev(ctx,e.target.result);rd.readAsDataURL(f)}
+function buildAvGrid(gid,ctx){const el=$(gid);if(!el)return;el.innerHTML=EMOJIS.map(em=>`<div class="aopt${tAv[ctx]===em?" sel":""}" data-e="${em}" onclick="setAvPrev('${ctx}','${em}')">${em}</div>`).join("")}
+function buildThmGrid(gid,sel){const el=$(gid);if(!el)return;el.innerHTML=THEMES.map(t=>`<div class="topt${t.id===sel?" sel":""}" data-t="${t.id}" onclick="selThm('${gid}','${t.id}')"><div class="tswatch">${t.sw.map(c=>`<span style="background:${c}"></span>`).join("")}</div><div class="tname">${t.name}</div></div>`).join("")}
+function selThm(gid,tid){document.querySelectorAll(`#${gid} .topt`).forEach(o=>o.classList.toggle("sel",o.dataset.t===tid));if(gid==="stgrid")applyTheme(tid)}
+function getSelThm(gid){const s=document.querySelector(`#${gid} .topt.sel`);return s?s.dataset.t:"ocean"}
+function updateTopbar(){if(!CU)return;const p=$("tb-prof");p.style.display="flex";$("btn-set").classList.remove("hidden");$("tb-name").textContent=CU.displayName||CU.username;$("tb-ava").innerHTML=avHTML(CU.avatar,28)}
+
+// ─── Auth ─────────────────────────────────────────────────────
+async function doRegister(){
+  const u=$("ru").value.trim(),p=$("rp").value,p2=$("rp2").value;
+  hideErr("rerr");
+  if(!/^[a-zA-Z0-9_]{3,20}$/.test(u)){showErr("rerr","Username: 3–20 chars, letters/numbers/underscore.");return}
+  if(p.length<6){showErr("rerr","Password must be at least 6 characters.");return}
+  if(p!==p2){showErr("rerr","Passwords do not match.");return}
+  if(getAcct(u)){showErr("rerr","Username already taken.");return}
+  const hash=await sha256hex(p+u.toLowerCase());
+  const avatar=tAv.r||"😎",theme=getSelThm("rtgrid")||"ocean";
+  setAcct(u,{hash,displayName:u,avatar,theme,created:new Date().toISOString()});
+  afterLogin({username:u.toLowerCase(),displayName:u,avatar,theme});
+}
+async function doLogin(){
+  const u=$("lu").value.trim(),p=$("lp").value;
+  hideErr("lerr");
+  const acct=getAcct(u);
+  if(!acct){showErr("lerr","Account not found.");return}
+  const hash=await sha256hex(p+u.toLowerCase());
+  if(hash!==acct.hash){showErr("lerr","Incorrect password.");return}
+  afterLogin({username:u.toLowerCase(),displayName:acct.displayName||u,avatar:acct.avatar,theme:acct.theme||"ocean"});
+}
+function afterLogin(user){CU=user;setSess(user);applyTheme(user.theme||"ocean");updateTopbar();$("nodel").textContent="Node "+myNode;showView("v-home");renderSaved()}
+function doLogout(){closeSettings();reset();CU=null;clrSess();$("tb-prof").style.display="none";$("btn-set").classList.add("hidden");$("btn-leave").classList.add("hidden");applyTheme("ocean");showView("v-login")}
+
+// ─── Settings ─────────────────────────────────────────────────
+function openSettings(){if(!CU)return;$("msub").textContent="@"+CU.username;$("sname").value=CU.displayName||CU.username;tAv.s=CU.avatar||"😎";setAvPrev("s",tAv.s);buildAvGrid("sagrid","s");buildThmGrid("stgrid",CU.theme||"ocean");$("modal").classList.remove("hidden")}
+function closeSettings(){$("modal").classList.add("hidden")}
+function saveSettings(){if(!CU)return;const name=$("sname").value.trim()||CU.username,avatar=tAv.s||CU.avatar,theme=getSelThm("stgrid")||CU.theme||"ocean";const acct=getAcct(CU.username);if(acct){acct.displayName=name;acct.avatar=avatar;acct.theme=theme;setAcct(CU.username,acct)}CU.displayName=name;CU.avatar=avatar;CU.theme=theme;setSess(CU);applyTheme(theme);updateTopbar();closeSettings()}
+
+// ─── DataChannel wire-up ──────────────────────────────────────
+function wireChannel(chan){
+  dc=chan;
+  chan.onopen=async()=>{
+    setStatus("connected");
+    $("btn-leave").classList.remove("hidden");
+    $("sbtn").disabled=false;
+    chan.send(JSON.stringify({t:"hi",id:myNode,name:CU?.displayName||myNode,avatar:CU?.avatar||"😎"}));
+    allMsgs=loadMsgs(roomId);renderAllMsgs(allMsgs);
+    addMsg("Encrypted channel open · AES-256-GCM · Messages saved locally.","sys");
+    upsertRoom(roomId,"p2p");
+    showView("v-chat");
+    setTimeout(()=>$("cinp").focus(),150);
+  };
+  chan.onmessage=async({data})=>{
+    try{
+      const msg=JSON.parse(data);
+      if(msg.t==="hi"){peerMeta={name:msg.name||msg.id||"Peer",avatar:msg.avatar||"👾"};$("pid").textContent=peerMeta.name;$("peer-ava").innerHTML=avHTML(peerMeta.avatar,20)}
+      else if(msg.t==="msg"){const txt=await aesDec(symKey,msg.d);removeTyping();addMsg(txt,"peer")}
+      else if(msg.t==="typing"){showTyping();clearTimeout(typTimer);typTimer=setTimeout(removeTyping,2500)}
+      else if(msg.t==="bye"){addMsg("Peer left the room.","sys");setStatus("disconnected");$("sbtn").disabled=true}
+    }catch(e){console.error("msg error",e)}
+  };
+  chan.onclose=()=>{setStatus("disconnected");addMsg("Peer disconnected.","sys");$("sbtn").disabled=true};
+  chan.onerror=e=>{setStatus("error");addMsg("Channel error.","sys");console.error(e)};
+}
+
+// ─── HOST FLOW ────────────────────────────────────────────────
+async function startHost(){
+  hideErr("herr");
+  showView("v-exchange");
+  $("xspinner").style.display="";
+  $("xbox").classList.add("hidden");
+  setStatus("waiting");
+  prog("Creating connection offer…");
+
+  try{
+    pc=new RTCPeerConnection(STUN);
+    // Create data channel BEFORE offer
+    const chan=pc.createDataChannel("chat",{ordered:true});
+    wireChannel(chan);
+
+    const offer=await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    prog("Discovering network path (up to 15s)…");
+    await waitICE(pc);
+
+    // encode the COMPLETE local description (includes all ICE candidates)
+    const offerCode=sdpEncode(pc.localDescription);
+    rawOfferSdp=pc.localDescription.sdp;
+    roomId=await sha256hex(rawOfferSdp.slice(0,120));
+    roomId=roomId.slice(0,12).toUpperCase();
+    symKey=await deriveSharedKey(rawOfferSdp);
+
+    $("xspinner").style.display="none";
+    prog("");
+    showHostCard(offerCode);
+  }catch(e){
+    showView("v-home");showErr("herr","Failed to create offer: "+e.message);setStatus("offline");
+  }
+}
+
+function showHostCard(offerCode){
+  const box=$("xbox");
+  box.innerHTML=`
+    <div class="estep">Step 1 — Copy your Offer Code and send it to your contact</div>
+    <div class="edesc">This code contains everything needed to establish a direct connection. Send it via any channel — email, chat, SMS, etc.</div>
+    <textarea id="offer-ta" class="ecode" readonly onclick="this.select()">${offerCode}</textarea>
+    <button class="ecopy" id="offer-cpbtn" onclick="doCopy('offer-ta','offer-cpbtn','⎘ COPY OFFER CODE')">⎘ COPY OFFER CODE</button>
+    <div class="ediv"></div>
+    <div class="estep">Step 2 — Paste the Answer Code your contact sends back</div>
+    <div class="edesc">After your contact pastes your offer code, they will generate an answer code. Paste it below and click Connect.</div>
+    <textarea id="answer-inp" class="einp" placeholder="Paste answer code here…"></textarea>
+    <button class="econn" onclick="doAcceptAnswer()">CONNECT →</button>
+  `;
+  box.classList.remove("hidden");
+}
+
+async function doAcceptAnswer(){
+  const raw=($("answer-inp")?.value||"").trim();
+  if(!raw){alert("Paste the answer code first.");return}
+  try{
+    const desc=sdpDecode(raw);
+    await pc.setRemoteDescription(new RTCSessionDescription(desc));
+    // Replace card with waiting indicator
+    $("xbox").innerHTML=`<div class="ewait">Establishing connection… <span class="blink">_</span><br><span style="font-size:10px;opacity:.6">This can take up to 30 seconds on some networks.</span></div>`;
+    prog("");
+  }catch(e){
+    $("xbox").querySelector(".einp") && ($("xbox").querySelector(".einp").style.borderColor="var(--re)");
+    alert("Invalid answer code: "+e.message);
+  }
+}
+
+// ─── GUEST FLOW ───────────────────────────────────────────────
+async function startGuest(){
+  const raw=($("join-ta")?.value||"").trim();
+  if(!raw){showErr("herr","Paste an offer code to join.");return}
+  hideErr("herr");
+  showView("v-exchange");
+  $("xspinner").style.display="";
+  $("xbox").classList.add("hidden");
+  setStatus("waiting");
+  prog("Decoding offer…");
+
+  try{
+    const offerDesc=sdpDecode(raw);
+    rawOfferSdp=offerDesc.sdp;
+    roomId=await sha256hex(rawOfferSdp.slice(0,120));
+    roomId=roomId.slice(0,12).toUpperCase();
+    symKey=await deriveSharedKey(rawOfferSdp);
+
+    pc=new RTCPeerConnection(STUN);
+    // Guest receives the data channel via ondatachannel
+    pc.ondatachannel=({channel})=>wireChannel(channel);
+
+    await pc.setRemoteDescription(new RTCSessionDescription(offerDesc));
+    const answer=await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    prog("Discovering network path (up to 15s)…");
+    await waitICE(pc);
+
+    const answerCode=sdpEncode(pc.localDescription);
+    $("xspinner").style.display="none";
+    prog("");
+    showGuestCard(answerCode);
+  }catch(e){
+    showView("v-home");showErr("herr","Failed to join: "+e.message);setStatus("offline");
+  }
+}
+
+function showGuestCard(answerCode){
+  const box=$("xbox");
+  box.innerHTML=`
+    <div class="estep" style="color:var(--as)">Send your Answer Code back to the host</div>
+    <div class="edesc">Copy this code and send it back to the person who gave you the offer code. The connection will open automatically.</div>
+    <textarea id="answer-ta" class="ecode ecode-as" readonly onclick="this.select()">${answerCode}</textarea>
+    <button class="ecopy ecopy-as" id="answer-cpbtn" onclick="doCopy('answer-ta','answer-cpbtn','⎘ COPY ANSWER CODE')">⎘ COPY ANSWER CODE</button>
+    <div class="ewait" style="margin-top:14px">Waiting for host to paste your answer… <span class="blink">_</span></div>
+  `;
+  box.classList.remove("hidden");
+}
+
+// ─── Copy helper ──────────────────────────────────────────────
+function doCopy(taId,btnId,label){
+  const val=$(taId)?.value||"";
+  navigator.clipboard.writeText(val).catch(()=>{
+    const t=document.createElement("textarea");t.value=val;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);
+  });
+  const btn=$(btnId);if(!btn)return;
+  const orig=btn.textContent;btn.textContent="✓ COPIED!";
+  setTimeout(()=>{if($(btnId))$(btnId).textContent=label},2200);
+}
+function prog(msg){$("xmsg").textContent=msg}
+
+// ─── Messages ─────────────────────────────────────────────────
+function fmtT(d){const dt=d instanceof Date?d:new Date(d);return new Date().toDateString()===dt.toDateString()?dt.toTimeString().slice(0,8):dt.toLocaleDateString()+" "+dt.toTimeString().slice(0,5)}
+function buildMsgEl(m){
+  const el=document.createElement("div");el.className="msg";
+  if(m.from==="sys"){el.innerHTML=`<div class="m-sys">── ${esc(m.text)} ──</div>`;return el}
+  const me=m.from==="me";
+  const name=me?(CU?.displayName||myNode):(peerMeta.name||"Peer");
+  const av=me?(CU?.avatar||"😎"):(peerMeta.avatar||"👾");
+  el.innerHTML=`<div class="${me?"m-me":"m-peer"}"><div class="m-meta">${avHTML(av,17)}<span style="font-weight:700;color:${me?"var(--ac)":"var(--as)"}">${esc(name)}</span><span style="color:var(--tx4);font-family:'Courier New',monospace;font-size:8px">${fmtT(m.ts)}</span>${me?'<span style="color:var(--grd);font-size:7px;font-family:Courier New,monospace">✓ E2E</span>':""}</div><div class="m-bbl ${me?"bme":"bpeer"}">${esc(m.text)}</div></div>`;
+  return el;
+}
+function renderAllMsgs(ms){
+  const el=$("messages");el.innerHTML="";msgCount=0;
+  if(!ms.length){el.innerHTML='<div class="m-empty" id="m-empty">Encrypted channel open.<br><span style="font-size:9px;color:var(--tx4)">Messages are saved locally across sessions.</span></div>';$("mcnt").textContent="0 messages";return}
+  ms.forEach(m=>{el.appendChild(buildMsgEl(m));if(m.from!=="sys")msgCount++});
+  $("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"");
+  el.scrollTop=el.scrollHeight;
+}
+function addMsg(text,from){
+  const m={id:Math.random().toString(36).slice(2),text,from,ts:new Date()};
+  allMsgs.push(m);
+  const emp=$("m-empty");if(emp)emp.remove();
+  const te=$("typing-el");if(te)te.remove();
+  $("messages").appendChild(buildMsgEl(m));$("messages").scrollTop=$("messages").scrollHeight;
+  if(from!=="sys"){msgCount++;$("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"")}
+  if(roomId)saveMsgs(roomId,allMsgs);
+}
+function showTyping(){const old=$("typing-el");if(old)old.remove();const el=document.createElement("div");el.className="typing-ind";el.id="typing-el";el.innerHTML=(peerMeta.name||"Peer")+' is typing<span class="blink">_</span>';$("messages").appendChild(el);$("messages").scrollTop=$("messages").scrollHeight}
+function removeTyping(){const t=$("typing-el");if(t)t.remove()}
+
+// ─── Send ─────────────────────────────────────────────────────
+async function sendMsg(){
+  const inp=$("cinp"),text=inp.value.trim();
+  if(!text||dc?.readyState!=="open"||!symKey)return;
+  inp.value="";$("ccc").textContent="0/2000";$("ccc").classList.remove("warn");$("sbtn").disabled=true;
+  try{const enc=await aesEnc(symKey,text);dc.send(JSON.stringify({t:"msg",d:enc}));addMsg(text,"me")}
+  catch{addMsg("[Send failed]","sys")}
+  $("sbtn").disabled=false;inp.focus();
+}
+function handleKey(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg()}}
+function onInput(el){
+  const n=el.value.length;$("ccc").textContent=n+"/2000";$("ccc").classList.toggle("warn",n>1800);$("sbtn").disabled=!el.value.trim();
+  const now=Date.now();
+  if(dc?.readyState==="open"&&now-lastTyp>1500){lastTyp=now;try{dc.send(JSON.stringify({t:"typing"}))}catch{}}
+}
+
+// ─── Clear / Reset ────────────────────────────────────────────
+function clearHistory(){if(!confirm("Clear all saved messages for this room?"))return;allMsgs=[];saveMsgs(roomId,[]);msgCount=0;$("messages").innerHTML='<div class="m-empty" id="m-empty">Encrypted channel open.<br><span style="font-size:9px;color:var(--tx4)">Messages are saved locally across sessions.</span></div>';$("mcnt").textContent="0 messages";addMsg("Message history cleared.","sys")}
+function reset(){
+  clearTimeout(typTimer);
+  try{dc?.send(JSON.stringify({t:"bye"}))}catch{}
+  try{dc?.close()}catch{}try{pc?.close()}catch{}
+  pc=null;dc=null;symKey=null;peerMeta={name:"",avatar:""};
+  roomId="";rawOfferSdp="";allMsgs=[];msgCount=0;
+  $("btn-leave").classList.add("hidden");
+  $("join-ta").value="";$("cinp").value="";
+  $("messages").innerHTML="";$("sbtn").disabled=true;
+  $("pid").textContent="—";$("peer-ava").innerHTML="";
+  $("ccc").textContent="0/2000";
+  $("xspinner").style.display="";$("xbox").classList.add("hidden");$("xbox").innerHTML="";
+  hideErr("herr");setStatus("offline");showView("v-home");renderSaved();
+}
+
+// ─── Saved rooms ──────────────────────────────────────────────
+function renderSaved(){
+  const rooms=loadRooms().reverse(),s=$("saved-sec");
+  if(!rooms.length){s.innerHTML="";return}
+  const rows=rooms.map(r=>{const safe=(r.id||"").replace(/'/g,"\\'");return`<div class="srow"><span class="scode">${esc(r.id||"")}</span><span class="badge b-ac">room</span><span class="sdate">${new Date(r.lastSeen).toLocaleDateString()}</span><button class="bg" style="border-color:var(--red);color:var(--re)" onclick="delRoom('${safe}')">✕</button></div>`}).join("");
+  s.innerHTML=`<div class="shdr" onclick="toggleSaved(this)">▶ SAVED ROOMS (${rooms.length})</div><div class="slist hidden">${rows}</div>`;
+}
+function toggleSaved(el){const l=el.nextElementSibling,o=!l.classList.contains("hidden");l.classList.toggle("hidden",o);el.textContent=(o?"▶":"▼")+el.textContent.slice(1)}
+function delRoom(id){if(!confirm("Remove this room and its messages?"))return;eraseRoom(id);renderSaved()}
+
+// ─── Init ─────────────────────────────────────────────────────
+(function(){
+  tAv.r="😎";buildAvGrid("ragrid","r");buildThmGrid("rtgrid","ocean");
+  setStatus("offline");
+  const sess=getSess();
+  if(sess&&getAcct(sess.username))afterLogin(sess);
+  else showView("v-login");
+})();
+
+</script>
+</body>
+</html>
