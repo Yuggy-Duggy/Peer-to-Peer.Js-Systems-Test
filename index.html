@@ -252,8 +252,8 @@ body{background:var(--bg);color:var(--tx)}
   <div id="messages"><div class="m-empty" id="m-empty">Connected — say hello!</div></div>
   <div id="compose">
     <div class="crow">
-      <label id="img-upload-lbl" title="Upload or paste image" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex-shrink:0;background:var(--sf3);border:1px solid var(--bd);border-radius:5px;cursor:pointer;font-size:16px;transition:.15s;align-self:flex-end" onmouseenter="this.style.borderColor='var(--bd2)'" onmouseleave="this.style.borderColor='var(--bd)'">📎
-        <input type="file" accept="image/*" style="display:none" onchange="handleImgUpload(this)">
+      <label id="img-upload-lbl" title="Send image or file (or drag & drop / paste)" style="display:flex;align-items:center;justify-content:center;width:34px;height:34px;flex-shrink:0;background:var(--sf3);border:1px solid var(--bd);border-radius:5px;cursor:pointer;font-size:16px;transition:.15s;align-self:flex-end" onmouseenter="this.style.borderColor='var(--bd2)'" onmouseleave="this.style.borderColor='var(--bd)'">📎
+        <input type="file" accept="*/*" style="display:none" onchange="handleImgUpload(this)">
       </label>
       <textarea id="cinp" rows="2"
         placeholder="Type a message… (Enter to send · Shift+Enter for newline)"
@@ -299,6 +299,9 @@ body{background:var(--bg);color:var(--tx)}
 <script>
 
 
+
+
+
 "use strict";
 const EMOJIS=["😎","🦊","🐺","🦁","🐯","🐻","🐼","🦄","🐸","🦋","🐙","🦅","🐲","👾","🤖","🎭","💀","🔮","⚡","🌙","🔥","💎","🌊","🎯"];
 const THEMES=[{id:"ocean",name:"Ocean",sw:["#06080e","#4d8eff","#00e676"]},{id:"amber",name:"Amber",sw:["#060309","#f0a500","#00cc66"]},{id:"rose",name:"Rose",sw:["#0e0608","#ff6b9d","#00e676"]},{id:"forest",name:"Forest",sw:["#060e08","#4dcc80","#00e676"]},{id:"violet",name:"Violet",sw:["#08060e","#9d6aff","#00e676"]},{id:"slate",name:"Slate",sw:["#0a0a0c","#8888ff","#44ff88"]}];
@@ -318,7 +321,10 @@ function mkCode(){return Array.from(crypto.getRandomValues(new Uint8Array(6)),b=
 const SC=crypto.subtle, rnd=n=>crypto.getRandomValues(new Uint8Array(n));
 const e64=a=>btoa(String.fromCharCode(...new Uint8Array(a)));
 const d64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-async function sha256hex(s){const b=await SC.digest("SHA-256",new TextEncoder().encode(s));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("")}
+async function sha256hex(s){
+  const b=await SC.digest("SHA-256",new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+}
 async function deriveKey(code){
   const raw=await SC.importKey("raw",new TextEncoder().encode(code.toUpperCase()),"PBKDF2",false,["deriveKey"]);
   return SC.deriveKey({name:"PBKDF2",salt:new TextEncoder().encode("cipher-link-v8"),iterations:100000,hash:"SHA-256"},raw,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
@@ -351,6 +357,10 @@ let typTimer=null, lastTyp=0, heartTimer=null;
 let inChat=false;       // true once chat view is open
 let brokerIdx=0;        // which broker we're trying
 let tAv={r:"😎",s:"😎"};
+// File transfer state
+const pendingIncoming = {};  // fileId → {name,type,size,totalChunks,chunks:[],received}
+const pendingOutgoing = {};  // fileId → {resolve,reject}
+
 
 // ── DOM ───────────────────────────────────────────────────────
 const $=id=>document.getElementById(id);
@@ -403,7 +413,7 @@ function saveSettings(){if(!CU)return;const name=$("sname").value.trim()||CU.use
 // ── Topics (explicit — no wildcards) ─────────────────────────
 // Each message type gets its own topic so we never need # subscriptions.
 function T(type){ return TOPIC_PREFIX + roomCode + "/" + type; }
-const ALL_TYPES = ["msg","img","presence","typing","bye"];
+const ALL_TYPES = ["msg","img","file_start","file_chunk","file_end","presence","typing","bye"];
 
 // ── Publish ───────────────────────────────────────────────────
 function pub(type, payload){
@@ -531,6 +541,31 @@ async function handleMessage(topic, rawBytes){
       addImgMsg(dataUrl, "peer", env.t ? new Date(env.t) : new Date(), id);
     } catch(e){ console.warn("img decrypt", e); }
 
+  } else if(type === "file_start"){
+    const {fileId,name,size,ftype,totalChunks} = env;
+    if(!fileId||seenIds.has("fs_"+fileId)) return;
+    seenIds.add("fs_"+fileId);
+    pendingIncoming[fileId] = {name,size,ftype:ftype||"application/octet-stream",totalChunks,chunks:[],received:0};
+    addFileProgress(fileId, name, size, totalChunks);
+
+  } else if(type === "file_chunk"){
+    const {fileId,idx,d} = env;
+    const transfer = pendingIncoming[fileId];
+    if(!transfer) return;
+    try {
+      const decrypted = await aesDec(symKey, d);
+      transfer.chunks[idx] = decrypted;
+      transfer.received++;
+      updateFileProgress(fileId, transfer.received, transfer.totalChunks);
+    } catch(e){ console.warn("chunk decrypt", e); }
+
+  } else if(type === "file_end"){
+    const {fileId} = env;
+    const transfer = pendingIncoming[fileId];
+    if(!transfer) return;
+    delete pendingIncoming[fileId];
+    finaliseFileReceive(fileId, transfer);
+
   } else if(type === "typing"){
     if(!peerOnline) return;
     showTyping(); clearTimeout(typTimer);
@@ -551,8 +586,8 @@ async function joinRoom(){
 }
 
 async function enterRoom(role){
-  symKey     = await deriveKey(roomCode);
-  allMsgs    = loadMsgs(roomCode);
+  symKey   = await deriveKey(roomCode);
+  allMsgs  = loadMsgs(roomCode);
   seenIds    = new Set(allMsgs.map(m=>m.id));
   peerMeta   = {name:"",avatar:""};
   peerOnline = false; inChat = false; brokerIdx = 0;
@@ -632,8 +667,12 @@ async function sendMsg(overrideDataUrl){
   $("sbtn").disabled = false; inp.focus();
 }
 function handleImgUpload(inp){
-  const f=inp.files?.[0]; inp.value=""; if(!f||!f.type.startsWith("image/"))return;
-  compressImage(f).then(showImgPreview).catch(e=>console.warn("upload compress",e));
+  const f=inp.files?.[0]; inp.value=""; if(!f)return;
+  if(f.type.startsWith("image/")){
+    compressImage(f).then(showImgPreview).catch(e=>console.warn("upload compress",e));
+  } else {
+    sendFile(f);
+  }
 }
 function handleKey(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg()}}
 function onInput(el){
@@ -829,15 +868,205 @@ function setupDragDrop(){
   area.addEventListener("drop", async e=>{
     e.preventDefault(); area.style.outline="";
     const file = e.dataTransfer?.files?.[0];
-    if(file && file.type.startsWith("image/")){
-      try {
-        const compressed = await compressImage(file);
-        showImgPreview(compressed);
-      } catch(err){ console.warn("drop compress fail",err); }
+    if(file){
+      if(file.type.startsWith("image/")){
+        try{ const c=await compressImage(file); showImgPreview(c); }
+        catch(e){ console.warn("drop img fail",e); }
+      } else {
+        sendFile(file);
+      }
     }
   });
 }
 
+
+
+// ── File transfer helpers ─────────────────────────────────────
+const FILE_MAX_MB   = 8;
+const CHUNK_BYTES   = 16384;  // 16 KB raw per chunk — safe for all brokers
+
+function humanSize(bytes){
+  if(bytes<1024)     return bytes+"B";
+  if(bytes<1048576)  return (bytes/1024).toFixed(1)+"KB";
+  return (bytes/1048576).toFixed(1)+"MB";
+}
+
+function fileIcon(mime){
+  if(!mime) return "📄";
+  if(mime.startsWith("image/"))       return "🖼";
+  if(mime.startsWith("video/"))       return "🎬";
+  if(mime.startsWith("audio/"))       return "🎵";
+  if(mime.includes("pdf"))            return "📕";
+  if(mime.includes("zip")||mime.includes("rar")||mime.includes("7z")) return "🗜";
+  if(mime.includes("word")||mime.includes("doc"))  return "📝";
+  if(mime.includes("sheet")||mime.includes("excel")||mime.includes("csv")) return "📊";
+  if(mime.includes("presentation")||mime.includes("powerpoint")) return "📑";
+  if(mime.includes("text/"))          return "📃";
+  if(mime.includes("javascript")||mime.includes("json")||mime.includes("html")) return "💾";
+  return "📦";
+}
+
+async function sendFile(file){
+  if(!symKey||!mqttClient?.connected){ alert("Not connected."); return; }
+  if(file.size > FILE_MAX_MB*1024*1024){
+    alert("File too large. Max "+FILE_MAX_MB+"MB.");
+    return;
+  }
+
+  const fileId  = myId+"_f"+Date.now()+"_"+Math.random().toString(36).slice(2,5);
+  const name    = file.name;
+  const size    = file.size;
+  const ftype   = file.type||"application/octet-stream";
+
+  // Read entire file
+  const arrayBuf = await file.arrayBuffer();
+  const bytes    = new Uint8Array(arrayBuf);
+
+  // Split into chunks
+  const chunks = [];
+  for(let i=0; i<bytes.length; i+=CHUNK_BYTES){
+    chunks.push(bytes.slice(i, i+CHUNK_BYTES));
+  }
+  const totalChunks = Math.max(chunks.length, 1);
+
+  // Show outgoing progress bubble
+  const msgId = fileId+"_send";
+  seenIds.add(msgId);
+  addFileSendBubble(fileId, name, size, totalChunks);
+
+  // Send file_start
+  pub("file_start", {fileId, name, size, ftype, totalChunks});
+  await sleep(80);
+
+  // Send chunks sequentially
+  for(let idx=0; idx<chunks.length; idx++){
+    const chunkB64 = e64(chunks[idx]);
+    const enc = await aesEnc(symKey, chunkB64);
+    pub("file_chunk", {fileId, idx, d:enc});
+    updateFileSendProgress(fileId, idx+1, totalChunks);
+    await sleep(30); // small delay to avoid flooding broker
+  }
+
+  // Send file_end
+  pub("file_end", {fileId});
+  markFileSendDone(fileId, name);
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ── Outgoing progress bubble ──────────────────────────────────
+function addFileSendBubble(fileId, name, size, total){
+  const emp=$("m-empty"); if(emp) emp.remove();
+  const el = document.createElement("div");
+  el.className="msg"; el.id="fsend_"+fileId;
+  el.innerHTML=`<div class="m-me"><div class="m-meta">
+    ${avHTML(CU?.avatar||"😎",17)}
+    <span style="font-weight:700;color:var(--ac)">${esc(CU?.displayName||"Me")}</span>
+    <span style="color:var(--tx4);font-family:'Courier New',monospace;font-size:8px">${fmtT(new Date())}</span>
+    <span style="color:var(--grd);font-size:7px;font-family:Courier New,monospace">✓ E2E</span>
+  </div>
+  <div class="m-bbl bme" style="min-width:200px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:24px">${fileIcon(null)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--mbt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+        <div style="font-size:10px;color:var(--tx3)">${humanSize(size)}</div>
+        <div style="margin-top:6px;height:4px;background:var(--bd);border-radius:2px;overflow:hidden">
+          <div id="fsprog_${fileId}" style="height:100%;width:0%;background:var(--ac);transition:width .2s;border-radius:2px"></div>
+        </div>
+        <div id="fslbl_${fileId}" style="font-size:9px;color:var(--tx3);margin-top:3px;font-family:'Courier New',monospace">Sending 0/${total} chunks…</div>
+      </div>
+    </div>
+  </div></div>`;
+  $("messages").appendChild(el);
+  $("messages").scrollTop=$("messages").scrollHeight;
+}
+
+function updateFileSendProgress(fileId, done, total){
+  const bar=$("fsprog_"+fileId), lbl=$("fslbl_"+fileId);
+  if(bar) bar.style.width=Math.round(done/total*100)+"%";
+  if(lbl) lbl.textContent="Sending "+done+"/"+total+" chunks…";
+}
+
+function markFileSendDone(fileId, name){
+  const bar=$("fsprog_"+fileId), lbl=$("fslbl_"+fileId);
+  if(bar){bar.style.width="100%";bar.style.background="var(--gr)";}
+  if(lbl) lbl.textContent="✓ Sent";
+  msgCount++;
+  $("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"");
+}
+
+// ── Incoming progress bubble ──────────────────────────────────
+function addFileProgress(fileId, name, size, total){
+  const emp=$("m-empty"); if(emp) emp.remove();
+  const el = document.createElement("div");
+  el.className="msg"; el.id="frecv_"+fileId;
+  el.innerHTML=`<div class="m-peer"><div class="m-meta">
+    ${avHTML(peerMeta.avatar||"👾",17)}
+    <span style="font-weight:700;color:var(--as)">${esc(peerMeta.name||"Peer")}</span>
+    <span style="color:var(--tx4);font-family:'Courier New',monospace;font-size:8px">${fmtT(new Date())}</span>
+  </div>
+  <div class="m-bbl bpeer" style="min-width:200px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-size:24px" id="ficon_${fileId}">${fileIcon(null)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--pbt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+        <div style="font-size:10px;color:var(--tx3)">${humanSize(size)}</div>
+        <div style="margin-top:6px;height:4px;background:var(--bd);border-radius:2px;overflow:hidden">
+          <div id="frprog_${fileId}" style="height:100%;width:0%;background:var(--as);transition:width .2s;border-radius:2px"></div>
+        </div>
+        <div id="frlbl_${fileId}" style="font-size:9px;color:var(--tx3);margin-top:3px;font-family:'Courier New',monospace">Receiving…</div>
+      </div>
+    </div>
+  </div></div>`;
+  $("messages").appendChild(el);
+  $("messages").scrollTop=$("messages").scrollHeight;
+}
+
+function updateFileProgress(fileId, done, total){
+  const bar=$("frprog_"+fileId), lbl=$("frlbl_"+fileId);
+  if(bar) bar.style.width=Math.round(done/total*100)+"%";
+  if(lbl) lbl.textContent="Receiving "+done+"/"+total+" chunks…";
+}
+
+function finaliseFileReceive(fileId, transfer){
+  const {name, ftype, totalChunks, chunks} = transfer;
+
+  // Rebuild bytes from base64 chunks
+  try {
+    const parts = [];
+    let total = 0;
+    for(let i=0;i<totalChunks;i++){
+      const b = d64(chunks[i]);
+      parts.push(b);
+      total += b.length;
+    }
+    const all = new Uint8Array(total);
+    let off = 0;
+    parts.forEach(p=>{ all.set(p,off); off+=p.length; });
+
+    const blob = new Blob([all], {type: ftype});
+    const url  = URL.createObjectURL(blob);
+
+    // Update the bubble to a download link
+    const bar  = $("frprog_"+fileId);
+    const lbl  = $("frlbl_"+fileId);
+    const icon = $("ficon_"+fileId);
+    if(bar){ bar.style.width="100%"; bar.style.background="var(--gr)"; }
+    if(icon) icon.textContent = fileIcon(ftype);
+    if(lbl){
+      lbl.innerHTML=`<a href="${url}" download="${esc(name)}"
+        style="color:var(--gr);font-family:'Courier New',monospace;font-size:9px;font-weight:700;text-decoration:none"
+        >⬇ DOWNLOAD ${esc(name)}</a>`;
+    }
+    msgCount++;
+    $("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"");
+  } catch(e){
+    const lbl=$("frlbl_"+fileId);
+    if(lbl) lbl.textContent="Error assembling file: "+e.message;
+    console.error("file assemble error",e);
+  }
+}
 
 // ── Saved rooms ───────────────────────────────────────────────
 function renderSaved(){
@@ -855,6 +1084,9 @@ function delRoom(code){if(!confirm("Remove room "+code+" and its messages?"))ret
   if(sess&&getAcct(sess.username))afterLogin(sess);
   else showView("v-login");
 })();
+
+
+
 
 
 </script>
