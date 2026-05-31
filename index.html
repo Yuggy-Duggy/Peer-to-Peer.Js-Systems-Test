@@ -302,6 +302,8 @@ body{background:var(--bg);color:var(--tx)}
 
 
 
+
+
 "use strict";
 const EMOJIS=["😎","🦊","🐺","🦁","🐯","🐻","🐼","🦄","🐸","🦋","🐙","🦅","🐲","👾","🤖","🎭","💀","🔮","⚡","🌙","🔥","💎","🌊","🎯"];
 const THEMES=[{id:"ocean",name:"Ocean",sw:["#06080e","#4d8eff","#00e676"]},{id:"amber",name:"Amber",sw:["#060309","#f0a500","#00cc66"]},{id:"rose",name:"Rose",sw:["#0e0608","#ff6b9d","#00e676"]},{id:"forest",name:"Forest",sw:["#060e08","#4dcc80","#00e676"]},{id:"violet",name:"Violet",sw:["#08060e","#9d6aff","#00e676"]},{id:"slate",name:"Slate",sw:["#0a0a0c","#8888ff","#44ff88"]}];
@@ -319,8 +321,18 @@ function mkCode(){return Array.from(crypto.getRandomValues(new Uint8Array(6)),b=
 
 // ── Crypto ────────────────────────────────────────────────────
 const SC=crypto.subtle, rnd=n=>crypto.getRandomValues(new Uint8Array(n));
-const e64=a=>btoa(String.fromCharCode(...new Uint8Array(a)));
-const d64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const e64=a=>{
+  const b=new Uint8Array(a); let s="";
+  for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]);
+  return btoa(s);
+};
+const d64=s=>{
+  // Strip any whitespace that MQTT/JSON transit may have added
+  const clean=String(s).replace(/[\s]/g,"");
+  // Fix padding if trimmed
+  const padded=clean+("===".slice(0,(4-clean.length%4)%4));
+  return Uint8Array.from(atob(padded),c=>c.charCodeAt(0));
+};
 async function sha256hex(s){
   const b=await SC.digest("SHA-256",new TextEncoder().encode(s));
   return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
@@ -423,12 +435,28 @@ function pub(type, payload){
   } catch(e){ console.warn("pub error",e); }
 }
 
+// QoS 1 publish — waits for broker acknowledgment before resolving.
+// Used for file chunks so none are dropped silently.
+function pubReliable(type, payload){
+  return new Promise((resolve, reject)=>{
+    if(!mqttClient||!mqttClient.connected){ reject(new Error("Not connected")); return; }
+    const msg = JSON.stringify({from:myId,...payload});
+    mqttClient.publish(T(type), msg, {qos:1, retain:false}, (err)=>{
+      if(err) reject(err); else resolve();
+    });
+  });
+}
+
 // ── Subscribe to all explicit topics ─────────────────────────
 function subscribeAll(cb){
-  const topics = ALL_TYPES.map(t => T(t));
+  const topics  = ALL_TYPES.map(t => T(t));
+  // File topics need QoS 1 to match the publisher — others fine at QoS 0
+  const fileTypes = new Set(["file_start","file_chunk","file_end"]);
   let done=0;
   topics.forEach(topic=>{
-    mqttClient.subscribe(topic,{qos:0},err=>{
+    const type = topic.split("/").pop();
+    const qos  = fileTypes.has(type) ? 1 : 0;
+    mqttClient.subscribe(topic,{qos},err=>{
       if(err) console.warn("sub error",topic,err);
       if(++done===topics.length && cb) cb();
     });
@@ -563,8 +591,13 @@ async function handleMessage(topic, rawBytes){
     const {fileId} = env;
     const transfer = pendingIncoming[fileId];
     if(!transfer) return;
+    // Brief wait in case some in-flight chunks haven't been processed yet
+    await sleep(300);
+    // Re-check transfer object (still valid after await?)
+    const t2 = pendingIncoming[fileId];
+    if(!t2) return; // already assembled (shouldn't happen but guard anyway)
     delete pendingIncoming[fileId];
-    finaliseFileReceive(fileId, transfer);
+    finaliseFileReceive(fileId, t2);
 
   } else if(type === "typing"){
     if(!peerOnline) return;
@@ -883,7 +916,7 @@ function setupDragDrop(){
 
 // ── File transfer helpers ─────────────────────────────────────
 const FILE_MAX_MB   = 8;
-const CHUNK_BYTES   = 16384;  // 16 KB raw per chunk — safe for all brokers
+const CHUNK_BYTES   = 49152;  // 48 KB raw per chunk — fewer messages, less broker throttling
 
 function humanSize(bytes){
   if(bytes<1024)     return bytes+"B";
@@ -913,43 +946,64 @@ async function sendFile(file){
     return;
   }
 
-  const fileId  = myId+"_f"+Date.now()+"_"+Math.random().toString(36).slice(2,5);
-  const name    = file.name;
-  const size    = file.size;
-  const ftype   = file.type||"application/octet-stream";
+  const fileId = myId+"_f"+Date.now()+"_"+Math.random().toString(36).slice(2,5);
+  const name   = file.name;
+  const size   = file.size;
+  const ftype  = file.type||"application/octet-stream";
 
-  // Read entire file
-  const arrayBuf = await file.arrayBuffer();
-  const bytes    = new Uint8Array(arrayBuf);
+  // Read entire file as bytes
+  const bytes = new Uint8Array(await file.arrayBuffer());
 
   // Split into chunks
   const chunks = [];
   for(let i=0; i<bytes.length; i+=CHUNK_BYTES){
     chunks.push(bytes.slice(i, i+CHUNK_BYTES));
   }
-  const totalChunks = Math.max(chunks.length, 1);
+  // Empty file edge case
+  if(chunks.length === 0) chunks.push(new Uint8Array(0));
+  const totalChunks = chunks.length;
 
   // Show outgoing progress bubble
-  const msgId = fileId+"_send";
-  seenIds.add(msgId);
+  seenIds.add(fileId+"_send");
   addFileSendBubble(fileId, name, size, totalChunks);
 
-  // Send file_start
-  pub("file_start", {fileId, name, size, ftype, totalChunks});
-  await sleep(80);
+  try {
+    // file_start — QoS 1, give receiver time to be ready
+    await pubReliable("file_start", {fileId, name, size, ftype, totalChunks});
+    await sleep(400);  // longer pause — let receiver subscribe and ACK before chunks arrive
 
-  // Send chunks sequentially
-  for(let idx=0; idx<chunks.length; idx++){
-    const chunkB64 = e64(chunks[idx]);
-    const enc = await aesEnc(symKey, chunkB64);
-    pub("file_chunk", {fileId, idx, d:enc});
-    updateFileSendProgress(fileId, idx+1, totalChunks);
-    await sleep(30); // small delay to avoid flooding broker
+    // Send each chunk sequentially with QoS 1 + retry
+    for(let idx=0; idx<chunks.length; idx++){
+      const enc = await aesEnc(symKey, e64(chunks[idx]));
+      let sent = false;
+      for(let attempt=0; attempt<5; attempt++){
+        try {
+          await pubReliable("file_chunk", {fileId, idx, d:enc});
+          sent = true;
+          break;
+        } catch(e){
+          console.warn("Chunk "+idx+" attempt "+attempt+" failed:", e.message);
+          await sleep(500 * (attempt+1));  // 500ms, 1s, 1.5s, 2s back-off
+        }
+      }
+      if(!sent) throw new Error("Chunk "+idx+" failed after 5 attempts. Try resending.");
+      updateFileSendProgress(fileId, idx+1, totalChunks);
+      // 200ms between chunks — well under typical broker rate limits of ~10 msg/s
+      await sleep(200);
+    }
+
+    // file_end — give broker 300ms to flush before signalling done
+    await sleep(300);
+    await pubReliable("file_end", {fileId});
+    markFileSendDone(fileId, name);
+
+  } catch(e){
+    const lbl=$("fslbl_"+fileId);
+    if(lbl) lbl.textContent="✗ Send failed: "+e.message;
+    const bar=$("fsprog_"+fileId);
+    if(bar) bar.style.background="var(--re)";
+    console.error("sendFile error",e);
   }
-
-  // Send file_end
-  pub("file_end", {fileId});
-  markFileSendDone(fileId, name);
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
@@ -1031,40 +1085,152 @@ function updateFileProgress(fileId, done, total){
 
 function finaliseFileReceive(fileId, transfer){
   const {name, ftype, totalChunks, chunks} = transfer;
-
-  // Rebuild bytes from base64 chunks
   try {
+    // Reassemble chunks back into full bytes
+    // Validate every chunk arrived before attempting assembly
+    const missing = [];
+    for(let i=0;i<totalChunks;i++){ if(chunks[i]==null) missing.push(i); }
+    if(missing.length>0) throw new Error("Missing chunk(s): "+missing.join(",")+". Try resending the file.");
+
     const parts = [];
-    let total = 0;
-    for(let i=0;i<totalChunks;i++){
+    let totalBytes = 0;
+    for(let i=0; i<totalChunks; i++){
       const b = d64(chunks[i]);
       parts.push(b);
-      total += b.length;
+      totalBytes += b.length;
     }
-    const all = new Uint8Array(total);
+    const all = new Uint8Array(totalBytes);
     let off = 0;
     parts.forEach(p=>{ all.set(p,off); off+=p.length; });
 
-    const blob = new Blob([all], {type: ftype});
-    const url  = URL.createObjectURL(blob);
+    const blob    = new Blob([all], {type: ftype||"application/octet-stream"});
+    const blobUrl = URL.createObjectURL(blob);
+    const isImage = ftype && ftype.startsWith("image/");
+    const isVideo = ftype && ftype.startsWith("video/");
+    const isAudio = ftype && ftype.startsWith("audio/");
+    const isPDF   = ftype && ftype.includes("pdf");
+    const isText  = ftype && (ftype.startsWith("text/") || ftype.includes("json") || ftype.includes("xml") || ftype.includes("javascript"));
+    const canPreview = isImage || isVideo || isAudio || isPDF || isText;
 
-    // Update the bubble to a download link
-    const bar  = $("frprog_"+fileId);
-    const lbl  = $("frlbl_"+fileId);
-    const icon = $("ficon_"+fileId);
+    // Update progress bar
+    const bar = $("frprog_"+fileId);
     if(bar){ bar.style.width="100%"; bar.style.background="var(--gr)"; }
+    const icon = $("ficon_"+fileId);
     if(icon) icon.textContent = fileIcon(ftype);
+
+    // Build the action area
+    const lbl = $("frlbl_"+fileId);
     if(lbl){
-      lbl.innerHTML=`<a href="${url}" download="${esc(name)}"
-        style="color:var(--gr);font-family:'Courier New',monospace;font-size:9px;font-weight:700;text-decoration:none"
-        >⬇ DOWNLOAD ${esc(name)}</a>`;
+      const previewBtn = canPreview
+        ? `<button onclick="previewFile('${fileId}')"
+            style="font-family:'Courier New',monospace;background:var(--ac);border:none;color:#000;
+                   font-size:9px;font-weight:700;padding:4px 10px;cursor:pointer;border-radius:3px;margin-right:6px">
+            👁 PREVIEW</button>`
+        : "";
+      const dlBtn = `<button onclick="downloadFile('${fileId}')"
+          style="font-family:'Courier New',monospace;background:var(--gr);border:none;color:#000;
+                 font-size:9px;font-weight:700;padding:4px 10px;cursor:pointer;border-radius:3px">
+          ⬇ DOWNLOAD</button>`;
+      lbl.innerHTML = `<span style="color:var(--gr);font-family:'Courier New',monospace;font-size:9px">✓ Ready &nbsp;</span>${previewBtn}${dlBtn}`;
     }
+
+    // Store blob URL on element for later use
+    const bubble = $("frecv_"+fileId);
+    if(bubble){
+      bubble.dataset.blobUrl  = blobUrl;
+      bubble.dataset.fileName = name;
+      bubble.dataset.ftype    = ftype||"";
+    }
+
     msgCount++;
     $("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"");
   } catch(e){
     const lbl=$("frlbl_"+fileId);
-    if(lbl) lbl.textContent="Error assembling file: "+e.message;
+    if(lbl) lbl.textContent="✗ Error assembling file: "+e.message;
     console.error("file assemble error",e);
+  }
+}
+
+// ── Download helper ───────────────────────────────────────────
+function downloadFile(fileId){
+  const el = $("frecv_"+fileId);
+  if(!el){ console.warn("downloadFile: element not found for", fileId); return; }
+  const url  = el.dataset.blobUrl;
+  const name = el.dataset.fileName||"download";
+  if(!url){ alert("File not ready — it may still be assembling."); return; }
+  // Create anchor, trigger click, remove after a delay so browser has time to start download
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href     = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ try{ document.body.removeChild(a); }catch{} }, 2000);
+}
+
+// ── Preview modal ─────────────────────────────────────────────
+function previewFile(fileId){
+  const el    = $("frecv_"+fileId);
+  if(!el) return;
+  const url   = el.dataset.blobUrl;
+  const name  = el.dataset.fileName||"File";
+  const ftype = el.dataset.ftype||"";
+  if(!url){ alert("File data not available."); return; }
+
+  // Remove any existing preview
+  const existing = $("file-preview-overlay");
+  if(existing) existing.remove();
+
+  const isImage = ftype.startsWith("image/");
+  const isVideo = ftype.startsWith("video/");
+  const isAudio = ftype.startsWith("audio/");
+  const isPDF   = ftype.includes("pdf");
+  const isText  = ftype.startsWith("text/") || ftype.includes("json") || ftype.includes("xml") || ftype.includes("javascript");
+
+  let inner = "";
+  if(isImage){
+    inner = `<img src="${url}" style="max-width:100%;max-height:75vh;border-radius:8px;display:block;margin:0 auto">`;
+  } else if(isVideo){
+    inner = `<video src="${url}" controls autoplay style="max-width:100%;max-height:75vh;border-radius:8px;display:block;margin:0 auto"></video>`;
+  } else if(isAudio){
+    inner = `<div style="padding:24px 0"><audio src="${url}" controls style="width:100%"></audio></div>`;
+  } else if(isPDF){
+    inner = `<iframe src="${url}" style="width:100%;height:75vh;border:none;border-radius:6px;background:#fff"></iframe>`;
+  } else if(isText){
+    // Fetch and display text content
+    inner = `<div id="fprev-text" style="background:var(--sf3);border:1px solid var(--bd);border-radius:6px;padding:14px;max-height:72vh;overflow:auto;font-family:'Courier New',monospace;font-size:12px;color:var(--tx);white-space:pre-wrap;word-break:break-all">Loading…</div>`;
+  }
+
+  const ov = document.createElement("div");
+  ov.id = "file-preview-overlay";
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;overflow-y:auto";
+  ov.innerHTML = `
+    <div style="width:100%;max-width:860px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:12px">
+        <span style="font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button onclick="downloadFile('${fileId}')"
+            style="font-family:'Courier New',monospace;background:var(--gr);border:none;color:#000;font-size:10px;font-weight:700;padding:6px 14px;cursor:pointer;border-radius:4px">
+            ⬇ DOWNLOAD</button>
+          <button onclick="document.getElementById('file-preview-overlay').remove()"
+            style="font-family:'Courier New',monospace;background:var(--re);border:none;color:#fff;font-size:10px;font-weight:700;padding:6px 14px;cursor:pointer;border-radius:4px">
+            ✕ CLOSE</button>
+        </div>
+      </div>
+      <div id="fprev-content">${inner}</div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  // Click backdrop to close
+  ov.addEventListener("click", e=>{ if(e.target===ov) ov.remove(); });
+
+  // Load text files
+  if(isText){
+    fetch(url).then(r=>r.text()).then(text=>{
+      const el=$("fprev-text"); if(el) el.textContent=text;
+    }).catch(()=>{
+      const el=$("fprev-text"); if(el) el.textContent="Could not load file text.";
+    });
   }
 }
 
@@ -1084,6 +1250,8 @@ function delRoom(code){if(!confirm("Remove room "+code+" and its messages?"))ret
   if(sess&&getAcct(sess.username))afterLogin(sess);
   else showView("v-login");
 })();
+
+
 
 
 
