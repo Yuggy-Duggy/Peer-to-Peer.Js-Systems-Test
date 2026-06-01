@@ -526,7 +526,11 @@ function connectBroker(onReady){
       setTimeout(()=>{
         if(mqttClient===client && roomCode){
           console.log("Silent reconnect…");
-          connectBroker(()=>{ pub("presence",presencePayload()); });
+          connectBroker(()=>{
+            pub("presence", presencePayload());
+            // Re-subscribe heartbeat if needed
+            if(!heartTimer) heartTimer = setInterval(()=>{ pub("presence",presencePayload()); removeStalePeers(); }, 8000);
+          });
         }
       }, 2000);
     }
@@ -585,7 +589,7 @@ async function handleMessage(topic, rawBytes){
       const dataUrl = await aesDec(symKey, env.d);
       removeTyping();
       addImgMsg(dataUrl, "peer", env.t ? new Date(env.t) : new Date(), id);
-      notifyIncoming(peerMeta.name||"Peer", "📷 Sent an image");
+      notifyIncoming(Object.values(peers)[0]?.name||"Peer", "📷 Sent an image");
     } catch(e){ console.warn("img decrypt", e); }
 
   } else if(type === "file_start"){
@@ -617,7 +621,7 @@ async function handleMessage(topic, rawBytes){
     if(!t2) return; // already assembled (shouldn't happen but guard anyway)
     delete pendingIncoming[fileId];
     finaliseFileReceive(fileId, t2);
-    notifyIncoming(peerMeta.name||"Peer", "📦 Sent a file: "+(t2.name||""));
+    notifyIncoming(Object.values(peers)[0]?.name||"Peer", "📦 Sent a file: "+(t2.name||""));
 
   } else if(type === "typing"){
     if(!peerOnline) return;
@@ -625,7 +629,11 @@ async function handleMessage(topic, rawBytes){
     typTimer = setTimeout(removeTyping, 2500);
 
   } else if(type === "bye"){
-    addMsg((peerMeta.name||"Peer")+" left the room.", "sys");
+    const byerName = (env.from && peers[env.from]?.name) || "Peer";
+    if(env.from && peers[env.from]) delete peers[env.from];
+    peerOnline = Object.keys(peers).length > 0;
+    renderPeersRow();
+    addMsg(byerName+" left the room.", "sys");
     peerOnline = false; setStatus("waiting"); $("sbtn").disabled = true;
   }
 }
@@ -642,7 +650,7 @@ async function enterRoom(role){
   symKey   = await deriveKey(roomCode);
   allMsgs  = loadMsgs(roomCode);
   seenIds    = new Set(allMsgs.map(m=>m.id));
-  peerMeta   = {name:"",avatar:""};
+  clearPeers();
   peerOnline = false; inChat = false; brokerIdx = 0;
 
   showView("v-wait"); setStatus("connecting");
@@ -1094,8 +1102,8 @@ function addFileProgress(fileId, name, size, total){
   const el = document.createElement("div");
   el.className="msg"; el.id="frecv_"+fileId;
   el.innerHTML=`<div class="m-peer"><div class="m-meta">
-    ${avHTML(peerMeta.avatar||"👾",17)}
-    <span style="font-weight:700;color:var(--as)">${esc(peerMeta.name||"Peer")}</span>
+    ${avHTML((Object.values(peers)[0]?.avatar)||"👾",17)}
+    <span style="font-weight:700;color:var(--as)">${esc((Object.values(peers)[0]?.name)||"Peer")}</span>
     <span style="color:var(--tx4);font-family:'Courier New',monospace;font-size:8px">${fmtT(new Date())}</span>
   </div>
   <div class="m-bbl bpeer" style="min-width:200px">
