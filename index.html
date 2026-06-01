@@ -374,7 +374,8 @@ let brokerIdx=0;        // which broker we're trying
 let tAv={r:"😎",s:"😎"};
 // File transfer state
 const pendingIncoming = {};  // fileId → {name,type,size,totalChunks,chunks:[],received}
-const msgStore = {};          // msgId  → {text, enc} for resend
+const msgStore  = {};   // msgId  → {text, enc} for resend
+const fileBlobs = {};   // fileId → {url, name, ftype} for preview/download
 const pendingOutgoing = {};  // fileId → {resolve,reject}
 
 
@@ -428,10 +429,7 @@ function saveSettings(){if(!CU)return;const name=$("sname").value.trim()||CU.use
 
 // ── Topics ─────────────────────────────────────────────────────
 function T(type){ return TOPIC_PREFIX + roomCode + "/" + type; }
-function TH(msgId){ return TOPIC_PREFIX + roomCode + "/history/" + msgId; }
-const HISTORY_WILDCARD = ()=> TOPIC_PREFIX + roomCode + "/history/#";
 const ALL_TYPES = ["msg","img","file_start","file_chunk","file_end","presence","typing","bye"];
-const PERSISTENT_TYPES = new Set(["msg","img"]);
 
 // ── Publish ───────────────────────────────────────────────────
 function pub(type, payload){
@@ -439,19 +437,6 @@ function pub(type, payload){
   try {
     mqttClient.publish(T(type), JSON.stringify({from:myId,...payload}), {qos:0, retain:false});
   } catch(e){ console.warn("pub error",e); }
-}
-
-// Publish a retained message to the history topic for this msgId.
-// The broker stores it and replays it to any future subscriber.
-function pubRetained(type, payload, msgId){
-  if(!mqttClient||!mqttClient.connected) return;
-  try{
-    mqttClient.publish(
-      TH(msgId),
-      JSON.stringify({type, ...payload}),
-      {qos:1, retain:true}
-    );
-  }catch(e){ console.warn("pubRetained error",e); }
 }
 
 // QoS 1 publish — waits for broker acknowledgment before resolving.
@@ -712,14 +697,12 @@ async function sendMsg(overrideDataUrl){
       const msgId = myId+"_img_"+Date.now()+"_"+Math.random().toString(36).slice(2,5);
       seenIds.add(msgId);
       pub("img", {d:enc, id:msgId, t:Date.now()});
-      pubRetained("img", {d:enc, id:msgId, t:Date.now(), from:myId}, msgId);
       addImgMsg(overrideDataUrl, "me", null, msgId);
     } else {
       const enc   = await aesEnc(symKey, text);
       const msgId = myId+"_"+Date.now()+"_"+Math.random().toString(36).slice(2,5);
       seenIds.add(msgId);
       pub("msg", {d:enc, id:msgId, t:Date.now()});
-      pubRetained("msg", {d:enc, id:msgId, t:Date.now(), from:myId}, msgId);
       msgStore[msgId] = {text, enc};
       addMsg(text, "me", null, msgId);
     }
@@ -756,6 +739,7 @@ function leaveRoom(){
   try{mqttClient?.end(true)}catch{}
   mqttClient=null; symKey=null; peerMeta={name:"",avatar:""}; peerOnline=false; inChat=false;
   Object.keys(msgStore).forEach(k=>delete msgStore[k]);
+  Object.keys(fileBlobs).forEach(k=>delete fileBlobs[k]);
   roomCode=""; allMsgs=[]; msgCount=0; seenIds=new Set();
   $("btn-leave").classList.add("hidden");
   $("join-inp").value=""; $("cinp").value="";
@@ -1167,7 +1151,8 @@ function finaliseFileReceive(fileId, transfer){
       lbl.innerHTML = `<span style="color:var(--gr);font-family:'Courier New',monospace;font-size:9px">✓ Ready &nbsp;</span>${previewBtn}${dlBtn}`;
     }
 
-    // Store blob URL on element for later use
+    // Store in JS registry (reliable) AND dataset (fallback)
+    fileBlobs[fileId] = {url: blobUrl, name, ftype: ftype||""};
     const bubble = $("frecv_"+fileId);
     if(bubble){
       bubble.dataset.blobUrl  = blobUrl;
@@ -1203,12 +1188,12 @@ function downloadFile(fileId){
 
 // ── Preview modal ─────────────────────────────────────────────
 function previewFile(fileId){
+  const reg   = fileBlobs[fileId];
   const el    = $("frecv_"+fileId);
-  if(!el) return;
-  const url   = el.dataset.blobUrl;
-  const name  = el.dataset.fileName||"File";
-  const ftype = el.dataset.ftype||"";
-  if(!url){ alert("File data not available."); return; }
+  const url   = reg?.url   || el?.dataset?.blobUrl;
+  const name  = reg?.name  || el?.dataset?.fileName || "File";
+  const ftype = reg?.ftype || el?.dataset?.ftype    || "";
+  if(!url){ alert("File not ready — it may still be assembling."); return; }
 
   // Remove any existing preview
   const existing = $("file-preview-overlay");
@@ -1272,7 +1257,6 @@ async function resendMsg(msgId){
   const stored = msgStore[msgId];
   if(!stored){ alert("Message data not available — may have been sent in a previous session."); return; }
   pub("msg", {d:stored.enc, id:msgId, t:Date.now()});
-  pubRetained("msg", {d:stored.enc, id:msgId, t:Date.now(), from:myId}, msgId);
   // Flash the button green to confirm
   const allMsgs = document.querySelectorAll(".msg");
   let btn = null;
