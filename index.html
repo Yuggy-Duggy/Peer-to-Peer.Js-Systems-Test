@@ -132,12 +132,25 @@ body{background:var(--bg);color:var(--tx)}
 .blink{animation:blink 1s step-end infinite}
 .resend-btn{font-family:'Courier New',monospace;background:none;border:none;color:var(--tx4);font-size:8px;cursor:pointer;padding:2px 4px;letter-spacing:.06em;transition:color .15s;margin-top:2px}
 .resend-btn:hover{color:var(--ac)}
+.peer-pill{display:inline-flex;align-items:center;gap:5px;background:var(--sf2);border:1px solid var(--bd);border-radius:20px;padding:2px 8px 2px 4px;font-size:11px;font-family:'Courier New',monospace;color:var(--tx2);white-space:nowrap}
+.peer-pill img,.peer-pill span.pp-av{flex-shrink:0}
+#peers-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+.room-name-lbl{font-family:'Courier New',monospace;font-size:10px;font-weight:700;color:var(--ac);letter-spacing:.1em;cursor:pointer;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.room-name-lbl:hover{text-decoration:underline}
+.rn-inp{font-family:'Courier New',monospace;font-size:11px;background:var(--sf2);border:1px solid var(--bd2);color:var(--ac);padding:3px 8px;border-radius:4px;width:140px;letter-spacing:.06em}
+.rn-inp:focus{outline:none;border-color:var(--ac)}
 </style>
 </head>
 <body>
 <div id="app">
 <div id="topbar">
-  <div class="tl"><div class="logo"><span class="logo-ic">◈ </span>CIPHER·LINK</div></div>
+  <div class="tl">
+    <div class="logo"><span class="logo-ic">◈ </span>CIPHER·LINK</div>
+    <div id="room-name-wrap" style="display:none;align-items:center;gap:6px">
+      <span class="sep" style="font-size:12px">›</span>
+      <span id="room-name-lbl" class="room-name-lbl" onclick="startRenameRoom()" title="Click to rename room"></span>
+    </div>
+  </div>
   <div class="tr">
     <div class="sdot" id="sdot"></div>
     <span class="slbl" id="slbl">OFFLINE</span>
@@ -241,9 +254,7 @@ body{background:var(--bg);color:var(--tx)}
 <div id="v-chat" class="view hidden" style="overflow:hidden;padding:0">
   <div id="istrip">
     <div class="info-l">
-      <span id="peer-ava"></span>
-      <span class="lbl">PEER</span>
-      <span id="pid" style="font-family:'Courier New',monospace;font-size:11px;font-weight:600;color:var(--tx2)">—</span>
+      <div id="peers-row"></div>
       <span class="sep">│</span>
       <span class="badge b-gr">🔒 AES-256-GCM</span>
       <span class="sep">│</span>
@@ -367,7 +378,9 @@ function eraseRoom(code){ls("rooms",JSON.stringify(loadRooms().filter(r=>r.code!
 const myId=Array.from(rnd(4)).map(b=>b.toString(16).padStart(2,"0")).join("");
 let CU=null, mqttClient=null, symKey=null, roomCode="";
 let allMsgs=[], msgCount=0, seenIds=new Set();
-let peerMeta={name:"",avatar:""}, peerOnline=false;
+const peers = {};          // peerId → {name, avatar, lastSeen}
+let peerOnline = false;    // true when ≥1 peer present
+let roomName   = "";       // user-assigned room name (stored locally)
 let typTimer=null, lastTyp=0, heartTimer=null;
 let inChat=false;       // true once chat view is open
 let brokerIdx=0;        // which broker we're trying
@@ -544,12 +557,12 @@ async function handleMessage(topic, rawBytes){
   const type = topic.split("/").pop();
 
   if(type === "presence"){
-    const fresh = !peerOnline;
-    peerOnline = true;
-    peerMeta = { name: env.name||"Peer", avatar: env.avatar||"👾" };
-    $("pid").textContent = peerMeta.name;
-    $("peer-ava").innerHTML = avHTML(peerMeta.avatar, 20);
-    if(fresh){ onPeerArrived(); }
+    const isNew = upsertPeer(env.from, env.name, env.avatar);
+    if(isNew){
+      if(!inChat){ openChat(); }
+      addMsg((env.name||"Peer")+" joined the room.", "sys");
+      notifyIncoming(env.name||"Peer", "joined the room");
+    }
     // Reply so they know we're here too
     pub("presence", presencePayload());
 
@@ -561,7 +574,7 @@ async function handleMessage(topic, rawBytes){
       const text = await aesDec(symKey, env.d);
       removeTyping();
       addMsg(text, "peer", env.t ? new Date(env.t) : new Date(), id);
-      notifyIncoming(peerMeta.name||"Peer", text.length>60?text.slice(0,60)+"…":text);
+      notifyIncoming(Object.values(peers).find(p=>p)||{name:"Peer"}, (typeof text==="string"&&text.length>60)?text.slice(0,60)+"…":text);
     } catch(e){ console.warn("decrypt", e); }
 
   } else if(type === "img"){
@@ -642,8 +655,16 @@ async function enterRoom(role){
     // Successfully subscribed
     setStatus("waiting");
     upsertRoom(roomCode, role);
+    // Load and apply room name
+    roomName = loadRoomName(roomCode);
+    applyRoomName(roomName);
+    renderPeersRow();
+
     pub("presence", presencePayload());
-    heartTimer = setInterval(()=>pub("presence", presencePayload()), 8000);
+    heartTimer = setInterval(()=>{
+      pub("presence", presencePayload());
+      removeStalePeers();
+    }, 8000);
 
     if(role === "host"){
       $("w-spinner").style.display = "none";
@@ -660,15 +681,8 @@ async function enterRoom(role){
 }
 
 function onPeerArrived(){
-  $("sbtn").disabled = false;
-  notifyIncoming(peerMeta.name||"Peer", "joined the room");
+  // Legacy — peer arrival now handled via upsertPeer in presence handler
   setStatus("online");
-  if(!inChat){
-    openChat();
-    addMsg(peerMeta.name + " joined the room.", "sys");
-  } else {
-    addMsg(peerMeta.name + " is here.", "sys");
-  }
 }
 
 function openChat(){
@@ -737,14 +751,17 @@ function leaveRoom(){
   clearInterval(heartTimer); clearTimeout(typTimer);
   try{pub("bye",{})}catch{}
   try{mqttClient?.end(true)}catch{}
-  mqttClient=null; symKey=null; peerMeta={name:"",avatar:""}; peerOnline=false; inChat=false;
+  mqttClient=null; symKey=null; peerOnline=false; inChat=false;
+  clearPeers(); roomName="";
+  const wrap=$("room-name-wrap"); if(wrap) wrap.style.display="none";
+  document.title="Cipher·Link";
   Object.keys(msgStore).forEach(k=>delete msgStore[k]);
   Object.keys(fileBlobs).forEach(k=>delete fileBlobs[k]);
   roomCode=""; allMsgs=[]; msgCount=0; seenIds=new Set();
   $("btn-leave").classList.add("hidden");
   $("join-inp").value=""; $("cinp").value="";
   $("messages").innerHTML=""; $("sbtn").disabled=true;
-  $("pid").textContent="—"; $("peer-ava").innerHTML="";
+
   $("ccc").textContent="0/2000";
   $("w-spinner").style.display=""; $("w-code-area").style.display="none"; $("w-code-area").classList.add("hidden");
   hideErr("herr"); setStatus("offline"); showView("v-home"); renderSaved();
@@ -756,7 +773,10 @@ function fmtT(d){const dt=d instanceof Date?d:new Date(d);return new Date().toDa
 function buildMsgEl(m){
   const el=document.createElement("div");el.className="msg";
   if(m.from==="sys"){el.innerHTML=`<div class="m-sys">── ${esc(m.text)} ──</div>`;return el}
-  const me=m.from==="me",name=me?(CU?.displayName||"Me"):(peerMeta.name||"Peer"),av=me?(CU?.avatar||"😎"):(peerMeta.avatar||"👾");
+  const me=m.from==="me";
+  const pinfo = !me ? (peers[m.peerId]||Object.values(peers)[0]||{name:"Peer",avatar:"👾"}) : null;
+  const name  = me ? (CU?.displayName||"Me") : (pinfo?.name||"Peer");
+  const av    = me ? (CU?.avatar||"😎")      : (pinfo?.avatar||"👾");
   const resendBtn = me && m.id && m.text
     ? `<button class="resend-btn" onclick="resendMsg('${m.id.replace(/'/g,"\\'")}')">↺ resend</button>`
     : "";
@@ -779,7 +799,7 @@ function addMsg(text,from,ts,id){
   if(from!=="sys"){msgCount++;$("mcnt").textContent=msgCount+" message"+(msgCount!==1?"s":"")}
   if(roomCode)saveMsgs(roomCode,allMsgs);
 }
-function showTyping(){const old=$("typing-el");if(old)old.remove();const el=document.createElement("div");el.className="typing-ind";el.id="typing-el";el.innerHTML=(peerMeta.name||"Peer")+' is typing<span class="blink">_</span>';$("messages").appendChild(el);$("messages").scrollTop=$("messages").scrollHeight}
+function showTyping(){const old=$("typing-el");if(old)old.remove();const el=document.createElement("div");el.className="typing-ind";el.id="typing-el";el.innerHTML=esc((Object.values(peers)[0]?.name)||"Peer")+' is typing<span class="blink">_</span>';$("messages").appendChild(el);$("messages").scrollTop=$("messages").scrollHeight}
 function removeTyping(){const t=$("typing-el");if(t)t.remove()}
 
 
@@ -823,9 +843,10 @@ function compressBlob(blob, maxKB=180){
 // Build an image message element
 function buildImgMsgEl(dataUrl, from, ts){
   const el = document.createElement("div"); el.className="msg";
-  const me = from === "me";
-  const name = me ? (CU?.displayName||"Me") : (peerMeta.name||"Peer");
-  const av   = me ? (CU?.avatar||"😎") : (peerMeta.avatar||"👾");
+  const me    = from === "me";
+  const pinfo = !me ? (Object.values(peers)[0]||{name:"Peer",avatar:"👾"}) : null;
+  const name  = me ? (CU?.displayName||"Me") : (pinfo?.name||"Peer");
+  const av    = me ? (CU?.avatar||"😎")      : (pinfo?.avatar||"👾");
   el.innerHTML=`<div class="${me?"m-me":"m-peer"}">
     <div class="m-meta">${avHTML(av,17)}
       <span style="font-weight:700;color:${me?"var(--ac)":"var(--as)"}">${esc(name)}</span>
@@ -1267,6 +1288,110 @@ async function resendMsg(msgId){
   }
 }
 
+
+// ── Peer management ──────────────────────────────────────────
+function renderPeersRow(){
+  const row = $("peers-row");
+  if(!row) return;
+  const list = Object.values(peers);
+  if(!list.length){
+    row.innerHTML = '<span style="font-family:\'Courier New\',monospace;font-size:9px;color:var(--tx4)">No peers online</span>';
+    return;
+  }
+  row.innerHTML = list.map(p=>`
+    <div class="peer-pill">
+      ${avHTML(p.avatar||"👾",18)}
+      <span style="font-size:11px;color:var(--tx2);font-weight:600;font-family:'Courier New',monospace">${esc(p.name||"Peer")}</span>
+    </div>`).join("");
+}
+
+function upsertPeer(peerId, name, avatar){
+  const isNew = !peers[peerId];
+  peers[peerId] = {name: name||"Peer", avatar: avatar||"👾", lastSeen: Date.now()};
+  peerOnline = true;
+  renderPeersRow();
+  $("sbtn").disabled = false;
+  if(isNew) return true;  // signals a new arrival
+  return false;
+}
+
+function removeStalePeers(){
+  const now = Date.now();
+  const TIMEOUT = 28000; // 28s — 3 missed heartbeats (8s interval)
+  let changed = false;
+  Object.keys(peers).forEach(id=>{
+    if(now - peers[id].lastSeen > TIMEOUT){
+      const name = peers[id].name;
+      delete peers[id];
+      addMsg(name+" left the room.", "sys");
+      changed = true;
+    }
+  });
+  if(changed){
+    peerOnline = Object.keys(peers).length > 0;
+    if(!peerOnline) $("sbtn").disabled = true;
+    renderPeersRow();
+  }
+}
+
+function clearPeers(){
+  Object.keys(peers).forEach(k=>delete peers[k]);
+  peerOnline = false;
+  const row = $("peers-row");
+  if(row) row.innerHTML = "";
+}
+
+// ── Room naming ───────────────────────────────────────────────
+function loadRoomName(code){
+  return localStorage.getItem("cl8:rn:"+code) || code;
+}
+function saveRoomName(code, name){
+  if(name && name.trim()) localStorage.setItem("cl8:rn:"+code, name.trim());
+}
+
+function applyRoomName(name){
+  roomName = name || roomCode;
+  const lbl  = $("room-name-lbl");
+  const wrap = $("room-name-wrap");
+  if(lbl)  lbl.textContent = roomName;
+  if(wrap) wrap.style.display = "flex";
+  // Also update waiting view code display
+  const wcode = $("wcode");
+  if(wcode) wcode.textContent = roomCode;
+  // Tab title
+  document.title = roomName + " — Cipher·Link";
+}
+
+function startRenameRoom(){
+  const wrap = $("room-name-wrap");
+  const lbl  = $("room-name-lbl");
+  if(!wrap||!lbl) return;
+  const cur = roomName || roomCode;
+  wrap.innerHTML = `<span class="sep" style="font-size:12px">›</span>
+    <input id="rn-edit" class="rn-inp" value="${esc(cur)}" maxlength="32"
+      onkeydown="if(event.key==='Enter')commitRename();if(event.key==='Escape')cancelRename();"
+      onblur="commitRename()">`;
+  const inp = $("rn-edit");
+  if(inp){ inp.focus(); inp.select(); }
+}
+function commitRename(){
+  const inp = $("rn-edit");
+  if(!inp) return;
+  const val = inp.value.trim() || roomCode;
+  saveRoomName(roomCode, val);
+  applyRoomName(val);
+  // Restore label
+  const wrap = $("room-name-wrap");
+  if(wrap) wrap.innerHTML = `<span class="sep" style="font-size:12px">›</span>
+    <span id="room-name-lbl" class="room-name-lbl" onclick="startRenameRoom()" title="Click to rename">${esc(val)}</span>`;
+}
+function cancelRename(){
+  applyRoomName(roomName);
+  const wrap = $("room-name-wrap");
+  if(wrap) wrap.innerHTML = `<span class="sep" style="font-size:12px">›</span>
+    <span id="room-name-lbl" class="room-name-lbl" onclick="startRenameRoom()" title="Click to rename">${esc(roomName)}</span>`;
+}
+
 // ── Notifications & tab ping ──────────────────────────────────
 let notifPerm   = "default";   // "granted" | "denied" | "default"
 let unreadCount = 0;
@@ -1341,7 +1466,8 @@ function sendDesktopNotif(title, body){
 }
 
 // Master function — call this whenever a message or file arrives
-function notifyIncoming(fromName, preview){
+function notifyIncoming(fromOrObj, preview){
+  const fromName = typeof fromOrObj==="string" ? fromOrObj : (fromOrObj?.name||"Peer");
   const hidden = document.hidden || document.visibilityState === "hidden";
   if(!hidden) return;   // tab is visible — no notification needed
   playPing();
