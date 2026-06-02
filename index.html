@@ -1383,6 +1383,7 @@ function upsertPeer(peerId, name, avatar){
   peerOnline = true;
   renderPeersRow();
   $("sbtn").disabled = false;
+  setStatus("online");
   if(isNew) return true;  // signals a new arrival
   return false;
 }
