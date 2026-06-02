@@ -213,15 +213,15 @@ body{background:var(--bg);color:var(--tx)}
     </div>
     <div id="herr" class="errbox hidden"></div>
     <div class="hcards">
-      <div class="card hcn" onclick="createRoom()">
+      <div class="card hcn" onclick="showNewRoomChoice()">
         <div class="ci" style="color:var(--ac)">+</div>
         <div class="ct">New Room</div>
-        <div class="cd">Generate a room code and share it with your contact</div>
+        <div class="cd">Generate a code or use a custom one</div>
       </div>
       <div class="card">
         <div class="ci" style="color:var(--as)">→</div>
         <div class="ct">Join Room</div>
-        <input id="join-inp" class="code-inp" placeholder="Enter room code" maxlength="8"
+        <input id="join-inp" class="code-inp" placeholder="Enter room code" maxlength="20"
           oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
           onkeydown="if(event.key==='Enter')joinRoom()">
         <button class="bp" onclick="joinRoom()">JOIN →</button>
@@ -282,6 +282,45 @@ body{background:var(--bg);color:var(--tx)}
   <span id="nodel">Cipher·Link</span>
   <span>MQTT TLS · AES-256-GCM · HiveMQ public broker · No WebRTC</span>
 </div>
+</div>
+
+<!-- New Room choice modal -->
+<div id="nr-modal" class="overlay hidden" onclick="if(event.target===this)closeNewRoomChoice()">
+  <div class="mbox" style="max-width:380px">
+    <div class="mtitle">NEW ROOM</div>
+    <div class="msub">How do you want to set up your room code?</div>
+    <div id="nr-err" class="errbox hidden"></div>
+
+    <!-- Generate option -->
+    <div class="card hcn" style="margin-bottom:10px" onclick="closeNewRoomChoice();createRoom()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <span style="font-family:'Courier New',monospace;font-size:20px;color:var(--ac);font-weight:700">◈</span>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:3px">Generate Code</div>
+          <div style="font-size:11px;color:var(--tx3)">A random 6-character code is created for you</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom option -->
+    <div class="card" style="border-color:var(--bd)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <span style="font-family:'Courier New',monospace;font-size:20px;color:var(--ac);font-weight:700">⁜</span>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:3px">Custom Code</div>
+          <div style="font-size:11px;color:var(--tx3)">Pick your own memorable code</div>
+        </div>
+      </div>
+      <input id="custom-inp" class="code-inp" placeholder="Your custom code" maxlength="20"
+        oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+        onkeydown="if(event.key==='Enter')createCustomRoom()">
+      <button class="bp" style="margin-top:6px" onclick="createCustomRoom()">CREATE ROOM →</button>
+    </div>
+
+    <div class="mfoot">
+      <button class="bs" onclick="closeNewRoomChoice()">CANCEL</button>
+    </div>
+  </div>
 </div>
 
 <div id="modal" class="overlay hidden" onclick="if(event.target===this)closeSettings()">
@@ -639,6 +678,31 @@ async function handleMessage(topic, rawBytes){
 }
 
 // ── Create / Join ─────────────────────────────────────────────
+
+
+// ── New Room choice ────────────────────────────────────────────
+function showNewRoomChoice(){
+  hideErr("herr");
+  const e = $("nr-err"); if(e) e.classList.add("hidden");
+  const inp = $("custom-inp"); if(inp) inp.value="";
+  $("nr-modal").classList.remove("hidden");
+  setTimeout(()=>$("custom-inp")?.focus(), 100);
+}
+function closeNewRoomChoice(){
+  $("nr-modal").classList.add("hidden");
+}
+async function createCustomRoom(){
+  const raw = ($("custom-inp")?.value||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
+  const eb  = $("nr-err");
+  if(raw.length < 2){
+    if(eb){ eb.textContent="✗ Code must be at least 2 characters."; eb.classList.remove("hidden"); }
+    return;
+  }
+  closeNewRoomChoice();
+  roomCode = raw;
+  await enterRoom("host");
+}
+
 async function createRoom(){ hideErr("herr"); roomCode=mkCode(); await enterRoom("host"); }
 async function joinRoom(){
   const code=($("join-inp")?.value||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
